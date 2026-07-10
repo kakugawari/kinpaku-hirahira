@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>金箔ひらひら</title>
+<!-- ===== PWA設定 ===== -->
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#0c0805">
+<link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+<!-- iOS: ホーム画面追加用 -->
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="金箔ひらひら">
+<style>
+  /* ===== 全体:漆器の質感を意識した黒基調 ===== */
+  html, body {
+    margin: 0; padding: 0;
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #0c0805;
+    touch-action: none;            /* スクロール等のブラウザ既定動作を無効化 */
+    -webkit-user-select: none; user-select: none;
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", "YuMincho", serif;
+  }
+  canvas { display: block; }
+
+  /* ===== 題字(左上に小さく) ===== */
+  #title {
+    position: fixed; top: 14px; left: 18px;
+    color: rgba(201,162,75,0.85);
+    font-size: 15px; letter-spacing: 0.35em;
+    writing-mode: vertical-rl;      /* 縦書きで和の趣を */
+    pointer-events: none;
+    text-shadow: 0 0 12px rgba(201,162,75,0.25);
+  }
+
+  /* ===== 最初の案内文(触れると消える) ===== */
+  #hint {
+    position: fixed; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    color: rgba(220,190,120,0.55);
+    font-size: 14px; letter-spacing: 0.25em;
+    pointer-events: none;
+    transition: opacity 1.2s ease;
+    text-align: center;
+    white-space: nowrap;
+  }
+  #hint.hidden { opacity: 0; }
+
+  /* ===== 下部の操作帯:漆の艶をイメージした半透明バー ===== */
+  #bar {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    display: flex; align-items: center; justify-content: center;
+    gap: 14px;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    background: linear-gradient(to top, rgba(10,7,4,0.85), rgba(10,7,4,0));
+  }
+  .swatch {
+    width: 30px; height: 30px; border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.15);
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .swatch.active {
+    transform: scale(1.18);
+    box-shadow: 0 0 10px 2px rgba(255,240,190,0.35);
+    border-color: rgba(255,240,190,0.7);
+  }
+  #sw-gold   { background: radial-gradient(circle at 35% 35%, #f4dc86, #c89a34 70%); }
+  #sw-silver { background: radial-gradient(circle at 35% 35%, #f2f4f7, #a7adb6 70%); }
+  #sw-copper { background: radial-gradient(circle at 35% 35%, #e59a55, #a8511f 70%); }
+
+  .divider { width: 1px; height: 22px; background: rgba(255,255,255,0.12); }
+
+  .btn {
+    color: rgba(220,196,140,0.85);
+    background: none; border: 1px solid rgba(220,196,140,0.3);
+    border-radius: 4px;
+    font-family: inherit; font-size: 12px; letter-spacing: 0.15em;
+    padding: 6px 12px;
+    cursor: pointer;
+  }
+  .btn:active { background: rgba(220,196,140,0.12); }
+
+  /* ===== お題モード:上部の掲示(お題名と残りひと匙) ===== */
+  #odai-hud {
+    position: fixed; top: 16px; left: 50%;
+    transform: translateX(-50%);
+    display: none;
+    flex-direction: column; align-items: center; gap: 6px;
+    pointer-events: none;
+  }
+  #odai-hud.show { display: flex; }
+  #odai-name {
+    color: rgba(230,205,140,0.9);
+    font-size: 15px; letter-spacing: 0.25em;
+    text-shadow: 0 0 10px rgba(201,162,75,0.3);
+  }
+  #odai-gauge {
+    width: 140px; height: 5px;
+    border: 1px solid rgba(230,205,140,0.35);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  #odai-gauge-fill {
+    height: 100%; width: 100%;
+    background: linear-gradient(to right, #c9a24b, #f0d878);
+    transition: width 0.15s ease;
+  }
+  #odai-gauge-label {
+    color: rgba(230,205,140,0.55);
+    font-size: 11px; letter-spacing: 0.2em;
+  }
+
+  /* ===== お題モード:結果の掛け軸風パネル ===== */
+  #result {
+    position: fixed; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    display: none;
+    flex-direction: column; align-items: center; gap: 14px;
+    padding: 28px 36px;
+    background: rgba(14,10,6,0.92);
+    border: 1px solid rgba(201,162,75,0.4);
+    border-radius: 6px;
+    box-shadow: 0 0 40px rgba(0,0,0,0.6);
+  }
+  #result.show { display: flex; }
+  #result-rank {
+    color: #f0d878;
+    font-size: 34px; letter-spacing: 0.3em;
+    text-shadow: 0 0 16px rgba(240,216,120,0.35);
+  }
+  #result-detail {
+    color: rgba(230,210,170,0.75);
+    font-size: 13px; letter-spacing: 0.12em;
+  }
+  #result-word {
+    color: rgba(230,210,170,0.55);
+    font-size: 12px; letter-spacing: 0.15em;
+  }
+  #result-buttons { display: flex; gap: 12px; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<canvas id="cv"></canvas>
+<div id="title">金箔ひらひら</div>
+<div id="hint">触れて蒔き はらいて風</div>
+
+<div id="bar">
+  <div class="swatch active" id="sw-gold"   title="金"></div>
+  <div class="swatch"        id="sw-silver" title="銀"></div>
+  <div class="swatch"        id="sw-copper" title="赤金"></div>
+  <div class="divider"></div>
+  <button class="btn" id="btn-odai">お題</button>
+</div>
+
+<!-- お題モード:上部掲示 -->
+<div id="odai-hud">
+  <div id="odai-name"></div>
+  <div id="odai-gauge"><div id="odai-gauge-fill"></div></div>
+  <div id="odai-gauge-label">ひと匙</div>
+</div>
+
+<!-- お題モード:結果 -->
+<div id="result">
+  <div id="result-rank"></div>
+  <div id="result-detail"></div>
+  <div id="result-word"></div>
+  <div id="result-buttons">
+    <button class="btn" id="btn-retry">もう一度</button>
+    <button class="btn" id="btn-free">自由に戻る</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   金箔散らし
+   - タップ / なぞりで金箔が舞い散り、少し落ちた先で貼り付く
+   - 落下中は箔が回転し、光を受けてきらめく
+   - 貼り付いた箔は「沈殿レイヤー」(オフスクリーンCanvas)に
+     焼き込むため、何万枚積もっても描画負荷は一定
+   ============================================================ */
+
+const cv  = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+
+/* 沈殿レイヤー:貼り付いた箔を焼き込む先 */
+const sedCv  = document.createElement("canvas");
+const sedCtx = sedCv.getContext("2d");
+
+let W = 0, H = 0, DPR = 1;
+
+/* ----- 端末解像度に合わせてCanvasを設定(リサイズ時は積もった箔を引き継ぐ) ----- */
+function resize() {
+  const oldW = sedCv.width, oldH = sedCv.height;
+  let old = null;
+  if (oldW > 0 && oldH > 0) {
+    /* 既存の沈殿レイヤーを一時退避 */
+    old = document.createElement("canvas");
+    old.width = oldW; old.height = oldH;
+    old.getContext("2d").drawImage(sedCv, 0, 0);
+  }
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width  = W * DPR; cv.height  = H * DPR;
+  cv.style.width = W + "px"; cv.style.height = H + "px";
+  sedCv.width = W * DPR; sedCv.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  sedCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (old) sedCtx.drawImage(old, 0, 0, oldW / DPR, oldH / DPR); /* 論理座標系で貼り直し */
+}
+window.addEventListener("resize", resize);
+resize();
+
+/* ============================================================
+   色定義:金・銀・赤金の三種。base=箔の地色、glint=きらめきの色
+   ============================================================ */
+const PALETTES = {
+  gold:   { base: ["#e8c15a", "#d4a944", "#c69436", "#f0d878", "#b8862f"], glint: "#fff6d5" },
+  silver: { base: ["#d9dde3", "#b9bec7", "#eef1f5", "#a9aeb8", "#c8cdd5"], glint: "#ffffff" },
+  copper: { base: ["#c9722f", "#b25a26", "#e08a3c", "#d97a35", "#9c4a1e"], glint: "#ffd9b0" },
+};
+let currentPalette = "gold";
+
+/* ============================================================
+   舞っている箔(落下中のパーティクル)
+   ============================================================ */
+const flakes = [];
+const MAX_FLAKES = 600;   /* 同時に舞える箔の上限(端末負荷対策) */
+
+/* 箔一枚を生成:不定形の四角形として頂点を持たせる
+   大きさは蒔絵の配合に倣った3階層:
+   ・砂子(すなご) …ごく細かい粉。全体の約8割
+   ・中粒          …小さな箔片。約2割
+   ・大判          …ひと摘みだけ混ざる大きな箔(長押しでも出る) */
+function makeFlake(x, y, big) {
+  let size, grade;
+  const roll = Math.random();
+  if (big || roll > 0.98) {          /* 大判:2% */
+    grade = 2;
+    size = 6 + Math.random() * 5;
+  } else if (roll > 0.78) {          /* 中粒:20% */
+    grade = 1;
+    size = 3 + Math.random() * 2.2;
+  } else {                           /* 砂子:78% */
+    grade = 0;
+    size = 1.2 + Math.random() * 1.2;
+  }
+  /* 金箔片らしい角ばった不定形の頂点(4点) */
+  const verts = [];
+  for (let i = 0; i < 4; i++) {
+    const a = (Math.PI / 2) * i + (Math.random() - 0.5) * 0.7;
+    const r = size * (0.6 + Math.random() * 0.5);
+    verts.push([Math.cos(a) * r, Math.sin(a) * r]);
+  }
+  const colors = PALETTES[currentPalette].base;
+  return {
+    x, y,
+    grade, size,
+    vx: (Math.random() - 0.5) * 1.6,        /* 横方向の初速 */
+    vy: -Math.random() * 1.2 - 0.2,          /* 少し舞い上がってから落ちる */
+    rot: Math.random() * Math.PI * 2,        /* 面内回転 */
+    vr: (Math.random() - 0.5) * (grade === 2 ? 0.06 : 0.12),  /* 大判はゆったり回る */
+    facePhase: Math.random() * Math.PI * 2,  /* 表裏の傾き(きらめき用の位相) */
+    faceRate: (grade === 0 ? 0.08 : 0.05) + Math.random() * 0.08,  /* 砂子は忙しなくひらめく */
+    swayPhase: Math.random() * Math.PI * 2,  /* 左右の揺らぎの位相 */
+    swayAmp: (grade === 0 ? 0.45 : 0.25) + Math.random() * 0.5,    /* 軽い粉ほどよく漂う */
+    verts,
+    color: colors[(Math.random() * colors.length) | 0],
+    glint: PALETTES[currentPalette].glint,
+    settleY: y + 60 + Math.random() * 220,   /* この高さまで落ちたら貼り付く */
+  };
+}
+
+/* ============================================================
+   貼り付いた箔の記録:きらめき演出の抽選用(描画自体は焼き込み済み)
+   ============================================================ */
+const settled = [];
+const MAX_SETTLED_RECORDS = 5000;
+
+/* 箔を沈殿レイヤーに焼き込む(=漆に貼り付く) */
+function stampFlake(f) {
+  sedCtx.save();
+  sedCtx.translate(f.x, f.y);
+  sedCtx.rotate(f.rot);
+
+  const flipped = Math.random() < 0.08;   /* 約8%は裏返って貼り付く */
+  if (flipped) {
+    /* 裏面:光を返さない暗い箔。艶消しの陰が金属らしさを生む */
+    sedCtx.globalAlpha = 0.85;
+    sedCtx.fillStyle = shadeColor(f.color, 0.45);
+    drawPoly(sedCtx, f.verts, 1);
+  } else {
+    /* 表面:明度の個体差を広めに取り、平坦さをなくす */
+    const bright = 0.55 + Math.random() * 0.45;
+    sedCtx.globalAlpha = bright;
+    sedCtx.fillStyle = f.color;
+    drawPoly(sedCtx, f.verts, 1);
+    /* ごく薄い縁のハイライトで箔の厚みを表現 */
+    sedCtx.globalAlpha = bright * 0.35;
+    sedCtx.strokeStyle = f.glint;
+    sedCtx.lineWidth = 0.5;
+    sedCtx.stroke();
+  }
+  sedCtx.restore();
+
+  settled.push({
+    x: f.x, y: f.y, size: f.size + 2, glint: f.glint,
+    /* 風で舞い上げるときに姿を復元するための情報 */
+    verts: f.verts, rot: f.rot,
+    color: flipped ? shadeColor(f.color, 0.45) : f.color,
+  });
+  if (settled.length > MAX_SETTLED_RECORDS) settled.shift();
+
+  /* お題モード:この箔が型の内か外かを記録 */
+  odaiRecord(f);
+
+  /* 着地の余韻:ぺたっと定着した瞬間、小さくきらっと光る
+     (表向きの箔だけ。大きい箔ほど少し強く光る) */
+  if (!flipped && !reduceMotion) {
+    sparkles.push({
+      x: f.x, y: f.y, glint: f.glint,
+      t: 0, dur: 0.25 + Math.random() * 0.15,
+      scale: 0.35 + f.size * 0.07,    /* 常時きらめきより控えめに */
+    });
+  }
+}
+
+/* 色を暗くするユーティリティ("#rrggbb" を係数で減光) */
+function shadeColor(hex, k) {
+  const r = (parseInt(hex.slice(1, 3), 16) * k) | 0;
+  const g = (parseInt(hex.slice(3, 5), 16) * k) | 0;
+  const b = (parseInt(hex.slice(5, 7), 16) * k) | 0;
+  return `rgb(${r},${g},${b})`;
+}
+
+/* 頂点列からポリゴンを描く(yScaleでひらひらの傾きを表現) */
+function drawPoly(c, verts, yScale) {
+  c.beginPath();
+  c.moveTo(verts[0][0], verts[0][1] * yScale);
+  for (let i = 1; i < verts.length; i++) c.lineTo(verts[i][0], verts[i][1] * yScale);
+  c.closePath();
+  c.fill();
+}
+
+/* ============================================================
+   きらめき:貼り付いた箔が時々ちらっと光る(蒔絵の艶)
+   ============================================================ */
+const sparkles = [];
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+let sparkleTimer = 0;
+
+function updateSparkles(dt) {
+  sparkleTimer -= dt;
+  /* 一定間隔で、積もった箔の中からランダムに光らせる */
+  if (sparkleTimer <= 0 && settled.length > 0 && !reduceMotion) {
+    sparkleTimer = 0.18 + Math.random() * 0.25;
+    const n = Math.min(1 + (settled.length / 800 | 0), 3);
+    for (let i = 0; i < n; i++) {
+      const s = settled[(Math.random() * settled.length) | 0];
+      sparkles.push({ x: s.x, y: s.y, glint: s.glint, t: 0, dur: 0.5 + Math.random() * 0.4, scale: 1 });
+    }
+  }
+  for (let i = sparkles.length - 1; i >= 0; i--) {
+    sparkles[i].t += dt;
+    if (sparkles[i].t > sparkles[i].dur) sparkles.splice(i, 1);
+  }
+}
+
+function drawSparkles() {
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";  /* 加算合成で光らせる */
+  for (const s of sparkles) {
+    const p = s.t / s.dur;
+    const a = Math.sin(p * Math.PI);          /* ふわっと明滅 */
+    const r = (3 + a * 5) * (s.scale || 1);
+    /* 中心の光 */
+    const g = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, r);
+    g.addColorStop(0, s.glint);
+    g.addColorStop(1, "rgba(255,240,190,0)");
+    ctx.globalAlpha = a * 0.8;
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, Math.PI * 2); ctx.fill();
+    /* 十字の光条 */
+    ctx.globalAlpha = a * 0.6;
+    ctx.strokeStyle = s.glint;
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(s.x - r * 1.6, s.y); ctx.lineTo(s.x + r * 1.6, s.y);
+    ctx.moveTo(s.x, s.y - r * 1.6); ctx.lineTo(s.x, s.y + r * 1.6);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/* ============================================================
+   入力:タップで一振り、長押し・なぞりで撒き続ける
+   ============================================================ */
+const pointer = { down: false, x: 0, y: 0, holdTime: 0 };
+const hint = document.getElementById("hint");
+let touched = false;
+
+/* フリック判定用:直近の指の軌跡(約100ms分)を覚えておく */
+const trail = [];
+const FLICK_SPEED = 2200;   /* これより速くはらうと風(px/秒)。速めのなぞりは撒き扱い */
+
+function pushTrail(x, y) {
+  const t = performance.now();
+  trail.push({ x, y, t });
+  while (trail.length > 0 && t - trail[0].t > 100) trail.shift();
+}
+
+function emitBurst(x, y, count, big) {
+  for (let i = 0; i < count; i++) {
+    /* お題モード中は匙の残りが尽きたら撒けない */
+    if (odai.active && !odai.result) {
+      if (odai.budget <= 0) return;
+      odai.budget--;
+      hudFill.style.width = (odai.budget / odai.budgetMax * 100) + "%";
+    } else if (odai.active && odai.result) {
+      return;   /* 結果表示中は撒けない */
+    }
+    if (flakes.length >= MAX_FLAKES) flakes.shift();  /* 上限超過時は古い箔を破棄 */
+    const ox = (Math.random() - 0.5) * 26;
+    const oy = (Math.random() - 0.5) * 18;
+    flakes.push(makeFlake(x + ox, y + oy, big));
+  }
+}
+
+function onDown(x, y) {
+  pointer.down = true; pointer.x = x; pointer.y = y; pointer.holdTime = 0;
+  trail.length = 0;
+  pushTrail(x, y);
+  emitBurst(x, y, 20, false);       /* タップの瞬間にぱっとひと振り(砂子中心なので多めに) */
+  if (!touched) { touched = true; hint.classList.add("hidden"); }
+}
+function onMove(x, y) {
+  if (!pointer.down) return;
+  pushTrail(x, y);
+  /* なぞった軌跡に沿って撒く */
+  const dx = x - pointer.x, dy = y - pointer.y;
+  const dist = Math.hypot(dx, dy);
+  const steps = Math.max(1, Math.min((dist / 14) | 0, 6));
+  for (let i = 1; i <= steps; i++) {
+    emitBurst(pointer.x + dx * i / steps, pointer.y + dy * i / steps, 3, false);
+  }
+  pointer.x = x; pointer.y = y;
+}
+function onUp() {
+  if (!pointer.down) return;
+  pointer.down = false;
+  /* フリック判定:直近の軌跡から離した瞬間の速度を求める */
+  if (trail.length >= 2) {
+    const a = trail[0], b = trail[trail.length - 1];
+    const dtms = b.t - a.t;
+    if (dtms > 15) {
+      const vx = (b.x - a.x) / dtms * 1000;   /* px/秒 */
+      const vy = (b.y - a.y) / dtms * 1000;
+      if (Math.hypot(vx, vy) >= FLICK_SPEED) {
+        /* はらった!→ その方向へ一陣の風 */
+        gust(vx, vy);
+        if (odai.active) resetRound();   /* お題中は同じ型でやり直し */
+      }
+    }
+  }
+  trail.length = 0;
+}
+
+/* ポインターイベント(マウス・タッチ共通) */
+cv.addEventListener("pointerdown", e => { e.preventDefault(); onDown(e.clientX, e.clientY); });
+cv.addEventListener("pointermove", e => { e.preventDefault(); onMove(e.clientX, e.clientY); });
+window.addEventListener("pointerup", onUp);
+window.addEventListener("pointercancel", onUp);
+
+/* ============================================================
+   場面転換:お題の開始時に、画面を下へ洗い流して切り替える
+   ============================================================ */
+let washing = null;  /* { t } 洗い流しアニメーション中の状態 */
+
+/* 洗い流し処理本体(お題のやり直しでも使う) */
+function washAway() {
+  if (washing) return;
+  if (settled.length === 0 && flakes.length === 0) {
+    flakes.length = 0;
+    return;
+  }
+  /* 現在の沈殿レイヤーを退避して、流れ落ちる演出に使う */
+  const snap = document.createElement("canvas");
+  snap.width = sedCv.width; snap.height = sedCv.height;
+  snap.getContext("2d").drawImage(sedCv, 0, 0);
+  washing = { t: 0, snap };
+  /* 本体は即クリア(以降の新しい箔は普通に積もれる) */
+  sedCtx.clearRect(0, 0, W, H);
+  settled.length = 0;
+  sparkles.length = 0;
+  flakes.length = 0;
+}
+
+/* ============================================================
+   風:はらう(フリック)と、その方向へ箔が吹き流される
+   ------------------------------------------------------------
+   ・貼り付いた箔を記録(settled)から粒子として蘇らせ、
+     風上から風下へ波が走るように順に浮き上がらせる
+   ・舞っている最中の箔にも風が当たる
+   ・はらった方向がそのまま風向きになる(斜め上に舞い上げるのも可)
+   ============================================================ */
+const blown = [];              /* 風に飛ばされている箔 */
+let wind = null;               /* { t, dur, dx, dy } 吹いている風(dx,dyは単位ベクトル) */
+
+function gust(dx, dy) {
+  /* 方向を正規化 */
+  const len = Math.hypot(dx, dy) || 1;
+  dx /= len; dy /= len;
+  wind = { t: 0, dur: 1.8, dx, dy };
+
+  /* 画面四隅を風向きに射影して、風上0〜風下1の範囲を求める */
+  const corners = [[0,0],[W,0],[0,H],[W,H]];
+  let pMin = Infinity, pMax = -Infinity;
+  for (const [cx, cy] of corners) {
+    const p = cx * dx + cy * dy;
+    if (p < pMin) pMin = p;
+    if (p > pMax) pMax = p;
+  }
+  const span = pMax - pMin || 1;
+
+  /* 積もった箔をすべて粒子に戻す。風上側から順に浮き上がる */
+  for (const s of settled) {
+    const along = ((s.x * dx + s.y * dy) - pMin) / span;   /* 風上=0, 風下=1 */
+    const speed = 1.5 + Math.random() * 2.5;
+    blown.push({
+      x: s.x, y: s.y,
+      verts: s.verts, rot: s.rot, color: s.color, glint: s.glint,
+      wait: along * 0.7 + Math.random() * 0.25,            /* 波が走る時間差 */
+      vx: dx * speed,
+      vy: dy * speed - (0.5 + Math.random() * 1.0),        /* ふわっと浮き上がる */
+      awx: dx * 6, awy: dy * 6,                            /* 風向きの加速 */
+      vr: (Math.random() - 0.5) * 0.25,
+      facePhase: Math.random() * Math.PI * 2,
+      faceRate: 0.1 + Math.random() * 0.12,                /* 風の中では激しくひらめく */
+    });
+  }
+  /* 沈殿レイヤーは即クリア(以降は粒子が姿を引き継ぐ) */
+  sedCtx.clearRect(0, 0, W, H);
+  settled.length = 0;
+  sparkles.length = 0;
+}
+
+/* 風に飛ばされている箔の更新と描画 */
+function updateBlown(dt) {
+  if (!wind && blown.length === 0) return;
+  if (wind) {
+    wind.t += dt;
+    if (wind.t > wind.dur) wind = null;
+  }
+  for (let i = blown.length - 1; i >= 0; i--) {
+    const b = blown[i];
+    if (b.wait > 0) { b.wait -= dt; continue; }   /* まだ風が届いていない */
+    /* 風向きへ加速しつつ、乱流でゆらぐ */
+    b.vx += b.awx * dt + (Math.random() - 0.5) * 4 * dt;
+    b.vy += b.awy * dt + (Math.random() - 0.42) * 6 * dt;
+    b.x += b.vx;
+    b.y += b.vy;
+    b.rot += b.vr;
+    b.facePhase += b.faceRate;
+    if (b.x < -30 || b.x > W + 30 || b.y < -30 || b.y > H + 30) {
+      blown.splice(i, 1);
+    }
+  }
+}
+
+function drawBlown() {
+  for (const b of blown) {
+    const face = Math.sin(b.facePhase);
+    const yScale = Math.abs(face) * 0.85 + 0.15;
+    const bright = Math.abs(face);
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(b.rot);
+    ctx.fillStyle = b.color;
+    ctx.globalAlpha = 0.55 + bright * 0.45;
+    drawPoly(ctx, b.verts, yScale);
+    if (bright > 0.88) {
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = (bright - 0.88) / 0.12 * 0.7;
+      ctx.fillStyle = b.glint;
+      drawPoly(ctx, b.verts, yScale);
+    }
+    ctx.restore();
+  }
+}
+
+/* ============================================================
+   お題モード(蒔絵のお題)
+   ------------------------------------------------------------
+   ・型(駒・三日月・扇・富士)が薄く浮かび、「ひと匙」=限られた
+     量の箔だけでその形に蒔く
+   ・採点は2軸:
+     埋まり … 型の内側をどれだけ広く覆えたか(升目の踏破率)
+     こぼれ … 撒いた箔のうち型の外に落ちた割合(面積の重み付き)
+   ・評価は 見習い → 職人 → 名人
+   ============================================================ */
+
+/* 型の定義:単位座標(-1〜1)でPath2Dを組む */
+const SHAPES = [
+  { name: "駒", build() {
+      /* 将棋駒の五角形:頂点・肩・裾 */
+      const p = new Path2D();
+      p.moveTo(0, -1);
+      p.lineTo(0.55, -0.5);
+      p.lineTo(0.70, 1);
+      p.lineTo(-0.70, 1);
+      p.lineTo(-0.55, -0.5);
+      p.closePath();
+      return p;
+    } },
+  { name: "三日月", build() {
+      /* 外弧(右のふくらみ)+内弧(左へ切れ込む)で三日月に */
+      const p = new Path2D();
+      p.moveTo(0, -1);
+      p.arc(0, 0, 1, -Math.PI / 2, Math.PI / 2, false);       /* 外側の弧 */
+      const cx = 1.5, r2 = Math.hypot(cx, 1);                  /* 内側の弧の中心と半径 */
+      p.arc(cx, 0, r2, Math.atan2(1, -cx), Math.atan2(-1, -cx), false);
+      p.closePath();
+      return p;
+    } },
+  { name: "扇", build() {
+      /* 上に開く扇形(外弧+内弧の帯) */
+      const p = new Path2D();
+      const a0 = -Math.PI * 5 / 6, a1 = -Math.PI / 6;          /* -150°〜-30° */
+      p.moveTo(Math.cos(a0) * 0.35, Math.sin(a0) * 0.35 + 0.55);
+      p.lineTo(Math.cos(a0) * 1.05, Math.sin(a0) * 1.05 + 0.55);
+      p.arc(0, 0.55, 1.05, a0, a1, false);
+      p.lineTo(Math.cos(a1) * 0.35, Math.sin(a1) * 0.35 + 0.55);
+      p.arc(0, 0.55, 0.35, a1, a0, true);
+      p.closePath();
+      return p;
+    } },
+  { name: "富士", build() {
+      /* 山の稜線:頂は雪形にぎざぎざと */
+      const p = new Path2D();
+      p.moveTo(-1, 0.62);
+      p.lineTo(-0.36, -0.52);
+      p.lineTo(-0.18, -0.40);
+      p.lineTo(0, -0.55);
+      p.lineTo(0.18, -0.40);
+      p.lineTo(0.36, -0.52);
+      p.lineTo(1, 0.62);
+      p.closePath();
+      return p;
+    } },
+];
+
+/* 点の内外判定専用の小さなコンテキスト(変換の影響を受けないように分離) */
+const hitCtx = document.createElement("canvas").getContext("2d");
+
+const odai = {
+  active: false,
+  shapeIdx: 0,
+  tPath: null,          /* 画面座標に変換済みのPath2D */
+  budgetMax: 300,       /* ひと匙 = 箔300枚 */
+  budget: 0,
+  inW: 0, outW: 0,      /* 内/外に落ちた箔の重み(面積)合計 */
+  zoneSet: new Set(),   /* 型の内側にある升目(埋まり判定用) */
+  zoneHit: new Set(),   /* 箔が届いた升目 */
+  grid: null,           /* 升目の原点と間隔 { ox, oy, step } */
+  result: null,         /* 採点結果(表示中はここに入る) */
+  settleTimer: 0,       /* 匙が尽きてから採点までの待ち */
+};
+
+const hud = document.getElementById("odai-hud");
+const hudName = document.getElementById("odai-name");
+const hudFill = document.getElementById("odai-gauge-fill");
+const resultEl = document.getElementById("result");
+
+/* 型を画面中央に配置し、升目(埋まり判定のマス)を敷き直す */
+function buildShapeGeometry() {
+  const s = Math.min(W, H) * 0.32;          /* 型の大きさ */
+  const cx = W / 2, cy = H * 0.42;          /* 少し上寄りに置く(下は操作帯) */
+  const m = new DOMMatrix().translate(cx, cy).scale(s);
+  odai.tPath = new Path2D();
+  odai.tPath.addPath(SHAPES[odai.shapeIdx].build(), m);
+
+  /* 型を覆う範囲に升目を敷き、中心が型の内側にある升だけ登録 */
+  const step = s * 0.27;
+  const ox = cx - s * 1.15, oy = cy - s * 1.15;
+  odai.grid = { ox, oy, step };
+  odai.zoneSet.clear();
+  const n = Math.ceil((s * 2.3) / step);
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      const px = ox + (i + 0.5) * step;
+      const py = oy + (j + 0.5) * step;
+      if (hitCtx.isPointInPath(odai.tPath, px, py)) {
+        odai.zoneSet.add(i + "," + j);
+      }
+    }
+  }
+}
+
+/* ラウンド開始/やり直し(型は変えずに匙と記録をリセット) */
+function resetRound() {
+  odai.budget = odai.budgetMax;
+  odai.inW = 0; odai.outW = 0;
+  odai.zoneHit.clear();
+  odai.result = null;
+  odai.settleTimer = 0;
+  resultEl.classList.remove("show");
+  hudName.textContent = "『" + SHAPES[odai.shapeIdx].name + "』に蒔く";
+  hudFill.style.width = "100%";
+}
+
+/* 新しいお題を引いて開始 */
+function startOdai(newShape) {
+  odai.active = true;
+  if (newShape) {
+    /* 直前と同じ型は避ける */
+    let idx;
+    do { idx = (Math.random() * SHAPES.length) | 0; }
+    while (idx === odai.shapeIdx && SHAPES.length > 1);
+    odai.shapeIdx = idx;
+  }
+  buildShapeGeometry();
+  washAway();
+  resetRound();
+  hud.classList.add("show");
+  document.getElementById("btn-odai").textContent = "自由へ";
+}
+
+/* お題モードを抜ける(作品はそのまま残す) */
+function endOdai() {
+  odai.active = false;
+  odai.result = null;
+  hud.classList.remove("show");
+  resultEl.classList.remove("show");
+  document.getElementById("btn-odai").textContent = "お題";
+}
+
+document.getElementById("btn-odai").addEventListener("click", () => {
+  odai.active ? endOdai() : startOdai(true);
+});
+document.getElementById("btn-retry").addEventListener("click", () => {
+  startOdai(true);   /* 新しい型で次のお題へ */
+});
+document.getElementById("btn-free").addEventListener("click", endOdai);
+
+/* 画面回転などでサイズが変わったら、型と升目を敷き直す */
+window.addEventListener("resize", () => {
+  if (odai.active) buildShapeGeometry();
+});
+
+/* 貼り付いた箔の内外を記録(stampFlakeから呼ばれる) */
+function odaiRecord(f) {
+  if (!odai.active || odai.result) return;
+  const w = f.size * f.size;   /* 面積の重み */
+  if (hitCtx.isPointInPath(odai.tPath, f.x, f.y)) {
+    odai.inW += w;
+    const g = odai.grid;
+    const key = Math.floor((f.x - g.ox) / g.step) + "," + Math.floor((f.y - g.oy) / g.step);
+    if (odai.zoneSet.has(key)) odai.zoneHit.add(key);
+  } else {
+    odai.outW += w;
+  }
+}
+
+/* 採点:埋まり(升目の踏破率)とこぼれ(外に落ちた重みの割合) */
+function judgeOdai() {
+  const fill  = odai.zoneSet.size > 0 ? odai.zoneHit.size / odai.zoneSet.size : 0;
+  const total = odai.inW + odai.outW;
+  const spill = total > 0 ? odai.outW / total : 1;
+
+  let rank, word;
+  if (fill >= 0.70 && spill <= 0.20) {
+    rank = "名人"; word = "見事な蒔きぶり。師も唸る手際です";
+  } else if (fill >= 0.45 && spill <= 0.40) {
+    rank = "職人"; word = "堂に入った撒き心地。名人まであと少し";
+  } else {
+    rank = "見習い"; word = "風を読み、少し上から漂わせてみましょう";
+  }
+
+  odai.result = { rank, fill, spill };
+  document.getElementById("result-rank").textContent = rank;
+  document.getElementById("result-detail").textContent =
+    "埋まり " + Math.round(fill * 100) + "% ・ こぼれ " + Math.round(spill * 100) + "%";
+  document.getElementById("result-word").textContent = word;
+  resultEl.classList.add("show");
+}
+
+/* 型の輪郭を薄く描く(毎フレーム、積もった箔の上に) */
+function drawShapeOutline() {
+  if (!odai.active) return;
+  ctx.save();
+  ctx.setLineDash([6, 7]);
+  ctx.lineDashOffset = -performance.now() / 120;   /* 輪郭がゆっくり巡る */
+  ctx.strokeStyle = "rgba(230,200,130,0.35)";
+  ctx.lineWidth = 1.4;
+  ctx.stroke(odai.tPath);
+  ctx.restore();
+}
+
+/* ============================================================
+   色の切り替え
+   ============================================================ */
+const swatches = { gold: "sw-gold", silver: "sw-silver", copper: "sw-copper" };
+for (const [key, id] of Object.entries(swatches)) {
+  document.getElementById(id).addEventListener("click", () => {
+    currentPalette = key;
+    for (const id2 of Object.values(swatches)) {
+      document.getElementById(id2).classList.toggle("active", id2 === id);
+    }
+  });
+}
+
+/* ============================================================
+   背景:漆黒。中央がわずかに温かく、縁は沈む(艶のある漆器)
+   ============================================================ */
+function drawBackground(c) {
+  const g = c.createRadialGradient(W / 2, H * 0.42, 0, W / 2, H * 0.42, Math.max(W, H) * 0.75);
+  g.addColorStop(0, "#1a120c");
+  g.addColorStop(0.7, "#100a06");
+  g.addColorStop(1, "#0a0603");
+  c.fillStyle = g;
+  c.fillRect(0, 0, W, H);
+  /* 斜めのごく薄い艶(漆の照り) */
+  const sheen = c.createLinearGradient(0, 0, W, H);
+  sheen.addColorStop(0.25, "rgba(255,235,200,0)");
+  sheen.addColorStop(0.45, "rgba(255,235,200,0.02)");
+  sheen.addColorStop(0.65, "rgba(255,235,200,0)");
+  c.fillStyle = sheen;
+  c.fillRect(0, 0, W, H);
+}
+
+/* ============================================================
+   メインループ
+   ============================================================ */
+let lastT = performance.now();
+
+function frame(now) {
+  const dt = Math.min((now - lastT) / 1000, 0.05);  /* タブ復帰時の暴走防止 */
+  lastT = now;
+
+  /* --- 長押し中は撒き続ける(押している時間で少しずつ勢いが増す) --- */
+  if (pointer.down) {
+    pointer.holdTime += dt;
+    const rate = Math.min(3 + pointer.holdTime * 3, 9);  /* 毎フレームの発生数 */
+    emitBurst(pointer.x, pointer.y, rate | 0, pointer.holdTime > 1.2);
+  }
+
+  /* --- 舞っている箔の更新 --- */
+  for (let i = flakes.length - 1; i >= 0; i--) {
+    const f = flakes[i];
+    f.vy += 2.2 * dt;                        /* 弱い重力 */
+    f.vy = Math.min(f.vy, 1.6);              /* 終端速度(ひらひら感を保つ) */
+    /* 風が吹いていれば流される(小さい箔ほどよく飛ぶ) */
+    if (wind) {
+      const power = (4.5 - f.grade * 1.2) * dt;
+      f.vx += wind.dx * power;
+      f.vy += wind.dy * power - 0.8 * dt;    /* 風でわずかに浮く */
+    }
+    f.swayPhase += (1.5 + f.swayAmp) * dt * 2.2;
+    f.x += f.vx + Math.sin(f.swayPhase) * f.swayAmp;
+    f.y += f.vy;
+    f.vx *= 0.985;                           /* 空気抵抗 */
+    f.rot += f.vr;
+    f.facePhase += f.faceRate;
+
+    /* 画面外(左右・上)へ流れた箔は破棄 */
+    if (f.x < -20 || f.x > W + 20 || f.y < -30) { flakes.splice(i, 1); continue; }
+
+    /* 貼り付き判定:落下中(vy>0)に既定の高さへ達したら焼き込む */
+    if (f.vy > 0 && f.y >= Math.min(f.settleY, H - 4)) {
+      stampFlake(f);
+      flakes.splice(i, 1);
+    }
+  }
+
+  updateSparkles(dt);
+  updateBlown(dt);
+
+  /* --- 描画 --- */
+  drawBackground(ctx);
+
+  /* 洗い流しアニメーション:退避した層が下へ流れながら薄れる */
+  if (washing) {
+    washing.t += dt;
+    const p = Math.min(washing.t / 1.4, 1);
+    const ease = p * p * (3 - 2 * p);        /* smoothstep */
+    ctx.save();
+    ctx.globalAlpha = 1 - ease;
+    ctx.drawImage(washing.snap, 0, ease * H * 0.6, W, H);
+    ctx.restore();
+    if (p >= 1) washing = null;
+  }
+
+  /* 積もった箔 */
+  ctx.drawImage(sedCv, 0, 0, W, H);
+
+  /* 風に飛ばされている箔 */
+  drawBlown();
+
+  /* お題の型の輪郭(積もった箔の上、舞う箔の下) */
+  drawShapeOutline();
+
+  /* お題の採点:匙が尽き、すべての箔が落ち切ったら少し間を置いて判定 */
+  if (odai.active && !odai.result && odai.budget <= 0 &&
+      flakes.length === 0 && !washing) {
+    odai.settleTimer += dt;
+    if (odai.settleTimer > 0.8) judgeOdai();
+  }
+
+  /* 舞っている箔:表裏の傾きで明るさと縦幅が変わる=きらめき */
+  for (const f of flakes) {
+    const face = Math.sin(f.facePhase);              /* -1..1 表裏の傾き */
+    const yScale = Math.abs(face) * 0.85 + 0.15;     /* 端に向くと細く */
+    const bright = Math.abs(face);
+    ctx.save();
+    ctx.translate(f.x, f.y);
+    ctx.rotate(f.rot);
+    ctx.fillStyle = f.color;
+    ctx.globalAlpha = 0.55 + bright * 0.45;
+    drawPoly(ctx, f.verts, yScale);
+    /* 面がこちらを向いた瞬間、glint色でひときわ光る */
+    if (bright > 0.88) {
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = (bright - 0.88) / 0.12 * 0.7;
+      ctx.fillStyle = f.glint;
+      drawPoly(ctx, f.verts, yScale);
+    }
+    ctx.restore();
+  }
+
+  drawSparkles();
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ============================================================
+   PWA:Service Worker登録(オフラインでも遊べるように)
+   ============================================================ */
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => {
+      /* 登録失敗時も通常のWebページとして動くので何もしない */
+    });
+  });
+}
+</script>
+</body>
+</html>
