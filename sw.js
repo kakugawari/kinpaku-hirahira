@@ -3,16 +3,16 @@
    - インストール時に全ファイルをキャッシュしてオフライン対応
    - 更新時はキャッシュ名(バージョン)を変えると古い物を掃除
    ============================================================ */
-const CACHE_NAME = "kinpaku-hirahira-v1";
+const CACHE_NAME = "kinpaku-hirahira-v2";
 
 const ASSETS = [
   "./",
   "./index.html",
   "./manifest.json",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png",
-  "./icons/icon-512-maskable.png",
-  "./icons/apple-touch-icon.png",
+  "./icon-192.png",
+  "./icon-512.png",
+  "./icon-512-maskable.png",
+  "./apple-touch-icon.png",
 ];
 
 /* インストール:必要なファイルを先読みキャッシュ */
