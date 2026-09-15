@@ -1,0 +1,11 @@
+{
+  "name": "kinpaku-hirahira",
+  "version": "1.0.0",
+  "description": "漆黒に金箔を蒔いて遊ぶ、蒔絵の癒しアプリ",
+  "private": true,
+  "scripts": {
+    "start": "node serve.js",
+    "test:ui": "node browser-test.js"
+  },
+  "license": "MIT"
+}

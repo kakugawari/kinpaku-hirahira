@@ -471,8 +471,15 @@ function onUp() {
   trail.length = 0;
 }
 
-/* ポインターイベント(マウス・タッチ共通) */
-cv.addEventListener("pointerdown", e => { e.preventDefault(); onDown(e.clientX, e.clientY); });
+/* ポインターイベント(マウス・タッチ共通)
+   押した指は setPointerCapture で捕まえておく。捕まえないと、指が下部の
+   操作帯に載った瞬間 pointermove が canvas へ来なくなり、pointer.down だけ
+   true のまま「最後に canvas で見た位置」へ撒き続けてしまう */
+cv.addEventListener("pointerdown", e => {
+  e.preventDefault();
+  try { cv.setPointerCapture(e.pointerId); } catch (_) { /* 捕まえられなくても動く */ }
+  onDown(e.clientX, e.clientY);
+});
 cv.addEventListener("pointermove", e => { e.preventDefault(); onMove(e.clientX, e.clientY); });
 window.addEventListener("pointerup", onUp);
 window.addEventListener("pointercancel", onUp);
