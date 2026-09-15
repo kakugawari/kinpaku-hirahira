@@ -118,6 +118,13 @@
   #result {
     position: fixed; top: 50%; left: 50%;
     transform: translate(-50%, -50%);
+    /* left:50% だけだと、幅を決める余地が画面の右半分しか残らない
+       (transform は描画位置をずらすだけで、幅の計算には効かない)。
+       内容ぶんの幅を取り、画面からはみ出さないところで止める。
+       padding を幅に含めるため box-sizing も要る */
+    box-sizing: border-box;
+    width: max-content;
+    max-width: min(360px, calc(100vw - 32px));
     display: none;
     flex-direction: column; align-items: center; gap: 14px;
     padding: 28px 36px;
@@ -405,6 +412,14 @@ const pointer = { down: false, x: 0, y: 0, holdTime: 0 };
 const hint = document.getElementById("hint");
 let touched = false;
 
+/* 案内文を消す。キャンバスに触れたときだけでなく、
+   お題に入ったときにも消す(型の上に文字が乗ってしまうため) */
+function hideHint() {
+  if (touched) return;
+  touched = true;
+  hint.classList.add("hidden");
+}
+
 /* フリック判定用:直近の指の軌跡(約100ms分)を覚えておく */
 const trail = [];
 const FLICK_SPEED = 2200;   /* これより速くはらうと風(px/秒)。速めのなぞりは撒き扱い */
@@ -437,7 +452,7 @@ function onDown(x, y) {
   trail.length = 0;
   pushTrail(x, y);
   emitBurst(x, y, 20, false);       /* タップの瞬間にぱっとひと振り(砂子中心なので多めに) */
-  if (!touched) { touched = true; hint.classList.add("hidden"); }
+  hideHint();
 }
 function onMove(x, y) {
   if (!pointer.down) return;
@@ -626,14 +641,20 @@ const SHAPES = [
       return p;
     } },
   { name: "三日月", build() {
-      /* 外弧(右のふくらみ)+内弧(左へ切れ込む)で三日月に */
+      /* 外弧(右のふくらみ)+内弧(右へ切れ込む)で三日月に。
+         内弧は外円を「削る」ように、内側へ膨らませる必要がある。
+         中心を左(cx<0)に置き、逆回りに描くと x=+0.3 を通って削れる */
       const p = new Path2D();
       p.moveTo(0, -1);
       p.arc(0, 0, 1, -Math.PI / 2, Math.PI / 2, false);       /* 外側の弧 */
-      const cx = 1.5, r2 = Math.hypot(cx, 1);                  /* 内側の弧の中心と半径 */
-      p.arc(cx, 0, r2, Math.atan2(1, -cx), Math.atan2(-1, -cx), false);
+      const cx = -1.5, r2 = Math.hypot(cx, 1);                 /* 内側の弧の中心と半径 */
+      p.arc(cx, 0, r2, Math.atan2(1, -cx), Math.atan2(-1, -cx), true);
       p.closePath();
-      return p;
+      /* 欠けたぶん右に寄るので、見た目の中心を原点へ戻す
+         (左端は cx+r2、右端は 1) */
+      const centered = new Path2D();
+      centered.addPath(p, new DOMMatrix().translate(-((cx + r2) + 1) / 2, 0));
+      return centered;
     } },
   { name: "扇", build() {
       /* 上に開く扇形(外弧+内弧の帯) */
@@ -734,6 +755,7 @@ function startOdai(newShape) {
   buildShapeGeometry();
   washAway();
   resetRound();
+  hideHint();                 /* 案内文が型に重なるので消す */
   hud.classList.add("show");
   document.getElementById("btn-odai").textContent = "自由へ";
 }
@@ -945,6 +967,24 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+
+/* ============================================================
+   テストからのぞくための入口
+   ------------------------------------------------------------
+   ロジックが画面と同じところに居るので、ブラウザテストから
+   中身を確かめる手立てがこれしかない。動作には関わらない。
+   ============================================================ */
+window.__app = {
+  flakes, settled, blown, sparkles, odai, SHAPES,
+  get wind() { return wind; },
+  /* 型を指定して組み直す(採点の当たり判定に使うPath2Dが手に入る) */
+  useShape(i) {
+    odai.shapeIdx = i;
+    buildShapeGeometry();
+    return odai.tPath;
+  },
+  isInsideShape(x, y) { return hitCtx.isPointInPath(odai.tPath, x, y); },
+};
 
 /* ============================================================
    PWA:Service Worker登録(オフラインでも遊べるように)

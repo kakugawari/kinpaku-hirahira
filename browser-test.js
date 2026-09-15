@@ -198,6 +198,123 @@ async function run() {
     ok(await phone.evaluate(() => !document.getElementById('odai-hud').classList.contains('show')),
       '「自由に戻る」で抜けられる');
 
+    /* ------------------------------------------------------------------
+       見張り ③: 起動してすぐ「お題」を押しても、案内文が型に重ならない
+
+       案内文はキャンバスに触れたときにしか消えなかったため、ボタンから
+       お題に入ると『触れて蒔き はらいて風』が型の真ん中に乗っていた。
+       ------------------------------------------------------------------ */
+    section('案内文が型に重ならない (見張り③)');
+    const ctx3 = await browser.newContext({ ...devices['iPhone 13'] });
+    const p3 = await ctx3.newPage();
+    p3.on('pageerror', (e) => errors.push('見張り③: ' + e.message));
+    await p3.goto(URL);
+    await p3.waitForTimeout(500);
+    ok(!(await p3.evaluate(() => document.getElementById('hint').classList.contains('hidden'))),
+      '起動直後は案内文が出ている');
+    await p3.click('#btn-odai');           // キャンバスには一度も触れずにお題へ
+    await p3.waitForTimeout(400);
+    ok(await p3.evaluate(() => document.getElementById('hint').classList.contains('hidden')),
+      'キャンバスに触れずにお題へ入っても案内文が消える');
+
+    /* ------------------------------------------------------------------
+       見張り ④: 結果パネルが画面幅の半分に潰れない
+
+       position:fixed + left:50% だけだと、幅を決める余地が画面の右半分しか
+       残らず、評価もボタンも縦に割れていた。
+       ------------------------------------------------------------------ */
+    section('結果パネルが潰れない (見張り④)');
+    for (const [vw, vh, label] of [[390, 844, 'iPhone 13'], [320, 568, '小さい端末']]) {
+      const ctxP = await browser.newContext({ viewport: { width: vw, height: vh }, deviceScaleFactor: 2 });
+      const pp = await ctxP.newPage();
+      pp.on('pageerror', (e) => errors.push('見張り④: ' + e.message));
+      await pp.goto(URL);
+      await pp.waitForTimeout(400);
+      const m = await pp.evaluate(() => {
+        const el = document.getElementById('result');
+        el.classList.add('show');
+        document.getElementById('result-rank').textContent = '見習い';
+        document.getElementById('result-detail').textContent = '埋まり 57% ・ こぼれ 53%';
+        document.getElementById('result-word').textContent = '風を読み、少し上から漂わせてみましょう';
+        const box = el.getBoundingClientRect();
+        const lines = (id) => {
+          const e = document.getElementById(id);
+          const cs = getComputedStyle(e);
+          const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2;
+          return Math.round(e.getBoundingClientRect().height / lh);
+        };
+        return {
+          w: Math.round(box.width),
+          rank: lines('result-rank'),
+          detail: lines('result-detail'),
+          はみ出し: box.left < 0 || box.right > innerWidth || box.top < 0 || box.bottom > innerHeight,
+          ボタン: (() => {
+            const btns = [...document.querySelectorAll('#result-buttons .btn')];
+            const boxes = btns.map((e) => e.getBoundingClientRect());
+            const 横並び = Math.abs(boxes[0].top - boxes[1].top) < 2 && boxes[0].right <= boxes[1].left + 1;
+            /* 文字が縦に割れていないか: 高さが1行ぶんに収まっているか見る */
+            const 一行 = btns.every((e) => {
+              const cs = getComputedStyle(e);
+              const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2;
+              const 中身 = e.getBoundingClientRect().height
+                - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)
+                - parseFloat(cs.borderTopWidth) - parseFloat(cs.borderBottomWidth);
+              return Math.round(中身 / lh) <= 1;
+            });
+            return { 横並び, 一行 };
+          })()
+        };
+      });
+      ok(m.rank === 1, `${label}: 評価が1行に収まる (パネル幅 ${m.w}px / 画面 ${vw}px)`);
+      ok(m.detail === 1, `${label}: 「埋まり・こぼれ」が1行に収まる`);
+      ok(m.ボタン.横並び && m.ボタン.一行, `${label}: ボタンの文字が縦に割れず横に並ぶ`);
+      ok(!m.はみ出し, `${label}: パネルが画面からはみ出さない`);
+      await ctxP.close();
+    }
+    await ctx3.close();
+
+    /* ------------------------------------------------------------------
+       見張り ⑤: 『三日月』の型に、ちゃんと欠けがある
+
+       内弧を外側へ膨らませていたため、削るどころか面積を足してしまい、
+       三日月ではなく木の葉(レンズ)の形になっていた。
+       型の中央の高さを横に走査し、外円の右寄りが「外」になることを見る。
+       ------------------------------------------------------------------ */
+    section('『三日月』が欠けている (見張り⑤)');
+    const ctxM = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+    const pm = await ctxM.newPage();
+    pm.on('pageerror', (e) => errors.push('見張り⑤: ' + e.message));
+    await pm.goto(URL);
+    await pm.waitForFunction(() => window.__app);
+    const moon = await pm.evaluate(() => {
+      /* アプリが実際に採点へ使う型そのものを測る */
+      const names = window.__app.SHAPES.map((s) => s.name);
+      const idx = names.indexOf('三日月');
+      window.__app.useShape(idx);
+      const s = Math.min(innerWidth, innerHeight) * 0.32;
+      const cx = innerWidth / 2, cy = innerHeight * 0.42;
+      const inside = (ux) => window.__app.isInsideShape(cx + ux * s, cy);
+      let 左端 = null, 右端 = null, 内側の幅 = 0;
+      for (let ux = -2; ux <= 4; ux += 0.01) {
+        if (inside(ux)) {
+          if (左端 === null) 左端 = +ux.toFixed(2);
+          右端 = +ux.toFixed(2);
+          内側の幅 += 0.01;
+        }
+      }
+      return { 名前: names[idx], 左端, 右端, 内側の幅: +内側の幅.toFixed(2),
+               中心ずれ: +((左端 + 右端) / 2).toFixed(2) };
+    });
+    // 三日月なら、中央の高さの「肉」は外円の直径よりずっと細い。
+    // レンズ形(直す前)だと -0.3〜1.0 = 1.3 になる。
+    ok(moon.内側の幅 < 0.8,
+      `中央の高さで型が細い = 欠けている (${moon.名前}: 肉の厚み ${moon.内側の幅} / 左端 ${moon.左端} 右端 ${moon.右端})`);
+    ok(moon.右端 - moon.左端 < 0.8,
+      `欠けが外円の内側に入っている (左端 ${moon.左端} 右端 ${moon.右端})`);
+    ok(Math.abs(moon.中心ずれ) < 0.06,
+      `型が画面の中央に来ている (中心ずれ ${moon.中心ずれ})`);
+    await ctxM.close();
+
     // ------------------------------------------------ アイコン
     section('アイコン');
     const apple = await phone.evaluate(() =>
