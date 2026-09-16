@@ -2,7 +2,9 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<!-- viewport-fit=cover が無いと env(safe-area-inset-*) が常に 0 になり、
+     下の操作帯がホームバーに、題字が時計に重なる -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>金箔ひらひら</title>
 <!-- ===== PWA設定 ===== -->
 <link rel="manifest" href="./manifest.json">
@@ -28,7 +30,9 @@
 
   /* ===== 題字(左上に小さく) ===== */
   #title {
-    position: fixed; top: 14px; left: 18px;
+    /* ホーム画面から開くと画面いっぱいに広がるので、上の余白を足さないと
+       時計やダイナミックアイランドの裏に入る (iPhone 16 Plus は上 59pt) */
+    position: fixed; top: calc(14px + env(safe-area-inset-top, 0px)); left: 18px;
     color: rgba(201,162,75,0.85);
     font-size: 15px; letter-spacing: 0.35em;
     writing-mode: vertical-rl;      /* 縦書きで和の趣を */
@@ -53,8 +57,8 @@
   #bar {
     position: fixed; bottom: 0; left: 0; right: 0;
     display: flex; align-items: center; justify-content: center;
-    gap: 14px;
-    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    gap: 12px;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
     background: linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0));
   }
   .swatch {
@@ -87,17 +91,10 @@
   }
   .btn:active { background: rgba(220,196,140,0.12); }
 
-  /* 幅の狭い端末:一段に収めつつ、指で押せる大きさは守る。
-     詰めないと 320px 幅で押し所が 24px まで潰れる */
-  @media (max-width: 360px) {
-    #bar { gap: 8px; padding-left: 8px; padding-right: 8px; }
-    .swatch { width: 28px; height: 28px; }
-    .btn { padding: 7px 8px; letter-spacing: 0.08em; }
-  }
 
   /* ===== お題モード:上部の掲示(お題名と残りひと匙) ===== */
   #odai-hud {
-    position: fixed; top: 16px; left: 50%;
+    position: fixed; top: calc(16px + env(safe-area-inset-top, 0px)); left: 50%;
     transform: translateX(-50%);
     display: none;
     flex-direction: column; align-items: center; gap: 6px;
@@ -235,7 +232,7 @@
 
 <canvas id="cv"></canvas>
 <div id="title">金箔ひらひら</div>
-<div id="hint">触れて蒔き はらいてずらす</div>
+<div id="hint">触れて蒔き なでてずらす</div>
 
 <div id="bar">
   <div class="swatch active" id="sw-gold"   title="金"></div>
@@ -245,6 +242,7 @@
   <button class="btn" id="btn-odai">お題</button>
   <button class="btn" id="btn-save">写す</button>
   <button class="btn" id="btn-book">記録</button>
+  <button class="btn" id="btn-clear">払う</button>
 </div>
 
 <!-- お題モード:上部掲示 -->
@@ -548,7 +546,7 @@ function hideHint() {
 
 /* フリック判定用:直近の指の軌跡(約100ms分)を覚えておく */
 const trail = [];
-const FLICK_SPEED = 2200;   /* これより速く払うと「ずらす」(px/秒)。速めのなぞりは撒き扱い */
+const FLICK_SPEED = 2200;   /* これより速くなでると「ずらす」(px/秒)。速めのなぞりは撒き扱い */
 
 function pushTrail(x, y) {
   const t = performance.now();
@@ -997,6 +995,19 @@ function saveArtwork() {
 }
 
 document.getElementById("btn-save").addEventListener("click", saveArtwork);
+
+/* 払う:積もった箔を全部流す。
+   お題の最中は採点が絡むので、同じ型でのやり直しにする */
+document.getElementById("btn-clear").addEventListener("click", () => {
+  if (settled.length === 0 && flakes.length === 0 && sliding.length === 0 && !odai.active) {
+    toast("まだ何も蒔かれていません");
+    return;
+  }
+  sliding.length = 0;
+  baseCtx.clearRect(0, 0, W, H);   /* 記録から溢れて下地へ焼いたぶんも消す */
+  washAway();
+  if (odai.active) resetRound();   /* ひと匙も戻す */
+});
 
 /* 画面回転などでサイズが変わったら、型と升目を敷き直す */
 window.addEventListener("resize", () => {
