@@ -240,7 +240,6 @@
   <div class="swatch"        id="sw-copper" title="赤金"></div>
   <div class="divider"></div>
   <button class="btn" id="btn-odai">お題</button>
-  <button class="btn" id="btn-save">写す</button>
   <button class="btn" id="btn-book">記録</button>
   <button class="btn" id="btn-clear">払う</button>
 </div>
@@ -973,7 +972,7 @@ document.getElementById("btn-book-close").addEventListener("click", () => {
 });
 
 /* ============================================================
-   写す:いま積もっている箔を1枚の絵にして、残す/送る
+   知らせの帯(払ったときなどに短く出す)
    ============================================================ */
 const toastEl = document.getElementById("toast");
 let toastTimer = 0;
@@ -984,46 +983,6 @@ function toast(text) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toastEl.classList.remove("show"), 2200);
 }
-
-/* 画面の飾り(型の輪郭・舞っている箔)を除いた、作品そのものを組む */
-function composeArtwork() {
-  const out = document.createElement("canvas");
-  out.width = sedCv.width; out.height = sedCv.height;
-  const c = out.getContext("2d");
-  c.setTransform(DPR, 0, 0, DPR, 0, 0);
-  drawBackground(c);
-  c.setTransform(1, 0, 0, 1, 0, 0);
-  c.drawImage(sedCv, 0, 0);
-  /* 隅に題字を小さく添える */
-  c.setTransform(DPR, 0, 0, DPR, 0, 0);
-  c.fillStyle = "rgba(201,162,75,0.75)";
-  c.font = '13px "Hiragino Mincho ProN", "Yu Mincho", serif';
-  c.textAlign = "right";
-  c.fillText("金箔ひらひら", W - 16, H - 16);
-  return out;
-}
-
-function saveArtwork() {
-  if (settled.length === 0) { toast("まだ何も蒔かれていません"); return; }
-  const out = composeArtwork();
-  out.toBlob((blob) => {
-    if (!blob) { toast("写せませんでした"); return; }
-    const file = new File([blob], "kinpaku.png", { type: "image/png" });
-    /* 送れる端末では共有シートへ。だめなら保存する */
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      navigator.share({ files: [file] }).then(() => toast("送りました")).catch(() => { /* 取り消しは何もしない */ });
-      return;
-    }
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = "kinpaku.png";
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
-    toast("写しました");
-  }, "image/png");
-}
-
-document.getElementById("btn-save").addEventListener("click", saveArtwork);
 
 /* 払う:積もった箔を全部流す。
    お題の最中は採点が絡むので、同じ型でのやり直しにする */
@@ -1244,7 +1203,14 @@ window.__app = {
   slidePush, PUSH_RADIUS,
   get records() { return records; },
   setRecords(r) { records = Core.reviveRecords(r); saveRecords(); },
-  composeArtwork,
+  /* 積もった箔だけを写し取る。きらめきや舞っている箔、型の輪郭が
+     混ざらないので、テストで作品そのものを測るのに使う */
+  sedimentSnapshot() {
+    const out = document.createElement("canvas");
+    out.width = sedCv.width; out.height = sedCv.height;
+    out.getContext("2d").drawImage(sedCv, 0, 0);
+    return out;
+  },
   /* 型を指定して組み直す(採点の当たり判定に使うPath2Dが手に入る) */
   useShape(i) {
     odai.shapeIdx = i;

@@ -470,33 +470,6 @@ async function run() {
     await ctxR.close();
 
     /* ------------------------------------------------------------------
-       見張り ⑨: 蒔いた作品を1枚の絵にできる
-       ------------------------------------------------------------------ */
-    section('作品を写せる (見張り⑨)');
-    const ctxA = await browser.newContext({ ...devices[PHONE] });
-    const pa = await ctxA.newPage();
-    pa.on('pageerror', (e) => errors.push('見張り⑨: ' + e.message));
-    await pa.goto(URL);
-    await pa.waitForFunction(() => window.__app);
-    await pa.mouse.move(CX, Math.round(V.height * 0.35));
-    await pa.mouse.down();
-    await pa.waitForTimeout(400);
-    await pa.mouse.up();
-    await pa.waitForTimeout(1600);
-    const art = await pa.evaluate(() => {
-      const cv = window.__app.composeArtwork();
-      const c = cv.getContext('2d');
-      const d = c.getImageData(0, 0, cv.width, cv.height).data;
-      let gold = 0;
-      for (let i = 0; i < d.length; i += 4 * 7) if (d[i] > 120 && d[i] > d[i + 2] + 30) gold++;
-      return { w: cv.width, h: cv.height, gold, png: cv.toDataURL('image/png').slice(0, 20) };
-    });
-    ok(art.w > 0 && art.h > 0 && art.png.startsWith('data:image/png'),
-      `作品が1枚の絵になる (${art.w}x${art.h})`);
-    ok(art.gold > 100, `写した絵に箔が写っている (${art.gold} 画素)`);
-    await ctxA.close();
-
-    /* ------------------------------------------------------------------
        見張り ⑩: 払うと、そのあたりの箔だけがずれる
 
        もとは画面じゅうの箔がいっせいに飛んでいってしまい、細かい直しに
@@ -589,11 +562,9 @@ async function run() {
       settled: window.__app.settled.length,
       flakes: window.__app.flakes.length,
       金: (() => {
-        const cv = window.__app.composeArtwork();
+        const cv = window.__app.sedimentSnapshot();
         const c = cv.getContext('2d');
-        /* 右下の題字そのものが金色なので、そこは数えない */
-        const h = Math.round(cv.height * (1 - 46 / innerHeight));
-        const d = c.getImageData(0, 0, cv.width, h).data;
+        const d = c.getImageData(0, 0, cv.width, cv.height).data;
         let n = 0;
         for (let i = 0; i < d.length; i += 4 * 7) if (d[i] > 120 && d[i] > d[i + 2] + 30) n++;
         return n;
