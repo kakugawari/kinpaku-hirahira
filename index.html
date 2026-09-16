@@ -315,6 +315,7 @@ const sedCtx = sedCv.getContext("2d");
 const baseCv  = document.createElement("canvas");
 const baseCtx = baseCv.getContext("2d");
 
+
 let W = 0, H = 0, DPR = 1;
 
 /* ----- 端末解像度に合わせてCanvasを設定(リサイズ時は積もった箔を引き継ぐ) ----- */
@@ -338,7 +339,7 @@ function resize() {
   baseCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
   if (old) sedCtx.drawImage(old, 0, 0, oldW / DPR, oldH / DPR); /* 論理座標系で貼り直し */
 }
-window.addEventListener("resize", resize);
+window.addEventListener("resize", () => { resize(); buildBokeh(); });
 resize();
 
 /* ============================================================
@@ -847,6 +848,7 @@ const odai = {
   zoneHit: new Set(),   /* 箔が届いた升目 */
   grid: null,           /* 升目の原点と間隔 { ox, oy, step } */
   bounds: null,         /* 型が画面のどこに来ているか(目安の帯に使う) */
+  outline: null,        /* 輪郭を金砂で描くための点列 */
   result: null,         /* 採点結果(表示中はここに入る) */
   settleTimer: 0,       /* 匙が尽きてから採点までの待ち */
 };
@@ -894,6 +896,15 @@ function buildShapeGeometry() {
     y0 = Math.min(y0, cy + uy * s); y1 = Math.max(y1, cy + uy * s);
   }
   odai.bounds = { left: x0, right: x1, top: y0, bottom: y1 };
+
+  /* 輪郭を金砂で描くために、画面座標の点列と、周に沿った距離を持つ */
+  const 画面点 = pts.map(([ux, uy]) => [cx + ux * s, cy + uy * s]);
+  const 累積 = [0];
+  for (let i = 1; i <= 画面点.length; i++) {
+    const a = 画面点[i - 1], b = 画面点[i % 画面点.length];
+    累積.push(累積[i - 1] + Math.hypot(b[0] - a[0], b[1] - a[1]));
+  }
+  odai.outline = { pts: 画面点, 累積, 周: 累積[累積.length - 1] };
 
   /* 型を覆う範囲に升目を敷き、中心が型の内側にある升だけ登録 */
   const step = s * 0.27;
@@ -1115,15 +1126,73 @@ function judgeOdai() {
   resultEl.classList.add("show");
 }
 
-/* 型の輪郭を薄く描く(毎フレーム、積もった箔の上に) */
+/* 周に沿った距離から、輪郭上の座標を引く */
+function 輪郭の点(d) {
+  const o = odai.outline;
+  const t = ((d % o.周) + o.周) % o.周;
+  let lo = 0, hi = o.累積.length - 1;
+  while (lo < hi - 1) {
+    const mid = (lo + hi) >> 1;
+    if (o.累積[mid] <= t) lo = mid; else hi = mid;
+  }
+  const a = o.pts[lo], b = o.pts[(lo + 1) % o.pts.length];
+  const 区間 = o.累積[lo + 1] - o.累積[lo] || 1;
+  const k = (t - o.累積[lo]) / 区間;
+  return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
+}
+
+/* 型の輪郭を金砂で描く(毎フレーム、積もった箔の上に)
+   ------------------------------------------------------------
+   破線で引くと図面の線に見える。細かい粒を周に沿って並べ、
+   少しだけ外へ散らすと、金砂を置いた線になる */
 function drawShapeOutline() {
-  if (!odai.active) return;
+  if (!odai.active || !odai.outline) return;
+  const o = odai.outline;
+  const 巡り = performance.now() / 26;        /* 粒がゆっくり周をめぐる */
+  const 間隔 = 2.0;
+  const n = Math.min(1100, Math.floor(o.周 / 間隔));
+
+  /* 粒を1つずつ塗ると、1フレームに千回近く塗ることになる。
+     明るさを数段階に丸めて、段ごとに1本の道としてまとめて塗る */
+  const 段数 = 6;
+  const 道 = [];
+  for (let k = 0; k < 段数; k++) 道.push(new Path2D());
+  const 強い = new Path2D();
+  let 強いのがある = false;
+
+  for (let i = 0; i < n; i++) {
+    const d = i * 間隔 + 巡り;
+    const [px, py] = 輪郭の点(d);
+    /* 粒ごとの明るさを、周に沿ってうねらせる。
+       周期がひとつだと等間隔に光って真珠の連なりに見えるので、
+       噛み合わない2つの波を掛け合わせて、むらのある散らばりにする */
+    const w = 0.25 + 0.75 * Math.abs(Math.sin(d * 0.061) * Math.sin(d * 0.0173 + 1.3));
+    const ずれ = Math.sin(d * 0.37 + i * 2.1) * 1.7;   /* 線から少しだけ外す */
+    const r = 0.32 + w * 0.62;
+    const x = px + ずれ, y = py + ずれ * 0.6;
+    const k = Math.min(段数 - 1, (w * 段数) | 0);
+    道[k].moveTo(x + r, y);
+    道[k].arc(x, y, r, 0, Math.PI * 2);
+    /* ときどき、粒がひとつ強く光る */
+    if (w > 0.985) {
+      強い.moveTo(x + r * 2.4, y);
+      強い.arc(x, y, r * 2.4, 0, Math.PI * 2);
+      強いのがある = true;
+    }
+  }
+
   ctx.save();
-  ctx.setLineDash([6, 7]);
-  ctx.lineDashOffset = -performance.now() / 120;   /* 輪郭がゆっくり巡る */
-  ctx.strokeStyle = "rgba(230,200,130,0.35)";
-  ctx.lineWidth = 1.4;
-  ctx.stroke(odai.tPath);
+  ctx.globalCompositeOperation = "lighter";
+  ctx.fillStyle = "#e8c15a";
+  for (let k = 0; k < 段数; k++) {
+    ctx.globalAlpha = 0.08 + ((k + 0.5) / 段数) * 0.30;
+    ctx.fill(道[k]);
+  }
+  if (強いのがある) {
+    ctx.globalAlpha = 0.4;
+    ctx.fillStyle = "#fff6d5";
+    ctx.fill(強い);
+  }
   ctx.restore();
 }
 
@@ -1204,6 +1273,122 @@ function drawBackground(c) {
 }
 
 /* ============================================================
+   ボケの箔(奥と手前をゆっくり漂う、ピントの外れた金箔)
+   ------------------------------------------------------------
+   遊びには関わらない飾り。採点にも当たり判定にも入らないので、
+   型の難易度は動かない。奥に小さく暗いもの、手前に大きく明るい
+   ものを置くと、画面に前後の深さが出る。
+
+   ぼかしは毎フレームかけると重いので、作るときに一度だけ焼いた
+   絵を、回して大きさを変えながら描く。
+   ============================================================ */
+const BOKEH_SPRITES = [];     /* ぼかし済みの絵(粗さ違いで数枚) */
+const bokehFlakes = [];
+
+
+/* ぼかした箔の絵を1枚作る */
+function makeBokehSprite(size, blur, tint) {
+  const c = document.createElement("canvas");
+  const pad = blur * 3;
+  c.width = c.height = Math.ceil((size + pad) * 2);
+  const g = c.getContext("2d");
+  g.translate(c.width / 2, c.height / 2);
+  g.filter = "blur(" + blur + "px)";
+  /* 箔らしい角ばった不定形 */
+  g.beginPath();
+  for (let i = 0; i < 5; i++) {
+    const a = (Math.PI * 2 / 5) * i + (Math.random() - 0.5) * 0.8;
+    const r = size * (0.55 + Math.random() * 0.6);
+    if (i === 0) g.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+    else g.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+  }
+  g.closePath();
+  const grad = g.createLinearGradient(-size, -size, size, size);
+  grad.addColorStop(0, tint[0]);
+  grad.addColorStop(0.5, tint[1]);
+  grad.addColorStop(1, tint[2]);
+  g.fillStyle = grad;
+  g.fill();
+  return c;
+}
+
+function buildBokeh() {
+  BOKEH_SPRITES.length = 0;
+  const 金 = [["#6b4e18", "#c9a24b", "#7a5c22"], ["#8a6a22", "#f0d878", "#9c7528"],
+              ["#5c4415", "#b08b3c", "#6b5019"]];
+  for (const tint of 金) {
+    BOKEH_SPRITES.push(makeBokehSprite(24, 6, tint));
+    BOKEH_SPRITES.push(makeBokehSprite(16, 3.5, tint));
+    BOKEH_SPRITES.push(makeBokehSprite(11, 2, tint));
+  }
+
+  bokehFlakes.length = 0;
+  /* 奥(小さく暗い)と手前(大きく明るい)を混ぜる。
+     大きく濃くすると「巨大な染み」に見えるので、数を増やして薄く散らす */
+  const n = 16;
+  for (let i = 0; i < n; i++) {
+    const 手前 = i >= n * 0.62;
+    bokehFlakes.push(newBokeh(手前, true));
+  }
+}
+
+function newBokeh(手前, 初回) {
+  return {
+    sprite: BOKEH_SPRITES[(Math.random() * BOKEH_SPRITES.length) | 0],
+    手前,
+    x: Math.random() * W,
+    y: 初回 ? Math.random() * H : -60 - Math.random() * 80,
+    /* 落下速度に個体差を持たせる。手前ほど速く見える(近いので) */
+    speed: (手前 ? 0.26 : 0.12) + Math.random() * (手前 ? 0.30 : 0.14),
+    scale: (手前 ? 0.85 : 0.35) + Math.random() * (手前 ? 0.75 : 0.35),
+    alpha: (手前 ? 0.10 : 0.05) + Math.random() * (手前 ? 0.13 : 0.07),
+    rotation: Math.random() * Math.PI * 2,
+    rotationSpeed: (Math.random() - 0.5) * 0.006,
+    swaySpeed: 0.0006 + Math.random() * 0.0011,
+    swayAmp: 0.18 + Math.random() * 0.45,
+    phase: Math.random() * Math.PI * 2,
+    wind: 0,
+  };
+}
+
+function updateBokeh(dt, now) {
+  if (reduceMotion) return;
+  for (let i = bokehFlakes.length - 1; i >= 0; i--) {
+    const b = bokehFlakes[i];
+    b.y += b.speed;
+    /* ゆっくり左右に揺れる */
+    b.x += Math.sin(now * b.swaySpeed + b.phase) * b.swayAmp;
+    /* ときどき、ゆるやかに風が吹く */
+    b.wind += (Math.random() - 0.5) * 0.02;
+    b.wind *= 0.995;
+    b.x += b.wind;
+    b.rotation += b.rotationSpeed;
+    if (b.y > H + 90 || b.x < -120 || b.x > W + 120) {
+      bokehFlakes[i] = newBokeh(b.手前, false);
+    }
+  }
+}
+
+buildBokeh();   /* 起動時に一度。resize() より後に置くこと(定数の初期化前に呼べない) */
+
+function drawBokeh(手前) {
+  if (reduceMotion || BOKEH_SPRITES.length === 0) return;
+  ctx.save();
+  /* 黒地なので、ふつうの重ね方でも金は沈まない。
+     lighter は読み書きが要るぶん高くつくので使わない */
+  for (const b of bokehFlakes) {
+    if (b.手前 !== 手前) continue;
+    ctx.globalAlpha = b.alpha;
+    ctx.translate(b.x, b.y);
+    ctx.rotate(b.rotation);
+    ctx.scale(b.scale, b.scale);
+    ctx.drawImage(b.sprite, -b.sprite.width / 2, -b.sprite.height / 2);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  ctx.restore();
+}
+
+/* ============================================================
    メインループ
    ============================================================ */
 let lastT = performance.now();
@@ -1247,6 +1432,8 @@ function frame(now) {
 
   /* --- 描画 --- */
   drawBackground(ctx);
+  updateBokeh(dt, now);
+  drawBokeh(false);          /* 奥のボケは、積もった箔より下に */
 
   /* 洗い流しアニメーション:退避した層が下へ流れながら薄れる */
   if (washing) {
@@ -1299,6 +1486,7 @@ function frame(now) {
   }
 
   drawSparkles();
+  drawBokeh(true);           /* 手前のボケは、すべての上に */
 
   requestAnimationFrame(frame);
 }

@@ -708,25 +708,35 @@ async function run() {
     await pg.click('#btn-odai');
     await pg.waitForTimeout(2300);
 
+    /* ボケの箔が漂うようになったので、1点だけ見ると当たり外れが出る。
+       線のある高さと、離れた高さを、横一列ならして比べる */
+    await pg.addScriptTag({ content: `
+      window.__横ならし = (py) => {
+        const cv = document.getElementById('cv');
+        const c = cv.getContext('2d');
+        const s = cv.width / innerWidth;
+        const y = Math.round(py * s);
+        const d = c.getImageData(0, y, cv.width, 1).data;
+        let 和 = 0, n = 0;
+        for (let i = 0; i < d.length; i += 4) { 和 += d[i]; n++; }
+        return 和 / n;
+      };
+    ` });
     const 目安 = await pg.evaluate(() => {
       const o = window.__app.odai;
       const 平均落下 = window.__app.SETTLE_MIN + window.__app.SETTLE_SPAN / 2;
       const y = (o.bounds.top + o.bounds.bottom) / 2 - 平均落下;
-      const cv = document.getElementById('cv');
-      const c = cv.getContext('2d');
-      const s = cv.width / innerWidth;
-      const 明るさ = (px, py) => c.getImageData(Math.round(px * s), Math.round(py * s), 1, 1).data[0];
       return {
         y: Math.round(y),
-        線の上: 明るさ(innerWidth / 2, y),
-        離れた所: 明るさ(innerWidth / 2, y - 120),
+        線の高さ: +window.__横ならし(y).toFixed(1),
+        離れた高さ: +window.__横ならし(y - 120).toFixed(1),
         型の上端: Math.round(o.bounds.top),
         画面内: y > 0 && y < innerHeight,
       };
     });
     ok(目安.画面内, `目安が画面の中に出る (y=${目安.y})`);
-    ok(目安.線の上 > 60 && 目安.離れた所 < 20,
-      `目安の線が光っている (線の上 ${目安.線の上} / 離れた所 ${目安.離れた所})`);
+    ok(目安.線の高さ > 目安.離れた高さ + 8,
+      `目安の線が光っている (線の高さ ${目安.線の高さ} / 離れた高さ ${目安.離れた高さ})`);
     ok(目安.y < 目安.型の上端,
       `目安は型より上にある (目安 ${目安.y} < 型の上端 ${目安.型の上端})`);
 
@@ -739,13 +749,14 @@ async function run() {
     const 消えた = await pg.evaluate(() => {
       const o = window.__app.odai;
       const y = (o.bounds.top + o.bounds.bottom) / 2 - (window.__app.SETTLE_MIN + window.__app.SETTLE_SPAN / 2);
-      const cv = document.getElementById('cv');
-      const c = cv.getContext('2d');
-      const s = cv.width / innerWidth;
-      /* 蒔いた箔から離れた右端で見る */
-      return c.getImageData(Math.round((innerWidth - 12) * s), Math.round(y * s), 1, 1).data[0];
+      return {
+        線の高さ: +window.__横ならし(y).toFixed(1),
+        離れた高さ: +window.__横ならし(y - 120).toFixed(1),
+      };
     });
-    ok(消えた < 20, `蒔き始めると目安が消える (明るさ ${消えた})`);
+    /* 線が消えていれば、線のあった高さと離れた高さの差がほとんど無くなる */
+    ok(消えた.線の高さ < 消えた.離れた高さ + 8,
+      `蒔き始めると目安が消える (線の高さ ${消えた.線の高さ} / 離れた高さ ${消えた.離れた高さ})`);
     await ctxG.close();
 
     // ------------------------------------------------ アイコン
