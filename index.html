@@ -61,6 +61,7 @@
     width: 30px; height: 30px; border-radius: 50%;
     border: 1px solid rgba(255,255,255,0.15);
     cursor: pointer;
+    flex: 0 0 auto;              /* 詰まっても押し所を潰さない */
     transition: transform 0.15s ease, box-shadow 0.15s ease;
   }
   .swatch.active {
@@ -79,10 +80,20 @@
     background: none; border: 1px solid rgba(220,196,140,0.3);
     border-radius: 4px;
     font-family: inherit; font-size: 12px; letter-spacing: 0.15em;
-    padding: 6px 12px;
+    padding: 7px 12px;
+    white-space: nowrap;
+    flex: 0 0 auto;              /* 詰まっても押し所を潰さない */
     cursor: pointer;
   }
   .btn:active { background: rgba(220,196,140,0.12); }
+
+  /* 幅の狭い端末:一段に収めつつ、指で押せる大きさは守る。
+     詰めないと 320px 幅で押し所が 24px まで潰れる */
+  @media (max-width: 360px) {
+    #bar { gap: 8px; padding-left: 8px; padding-right: 8px; }
+    .swatch { width: 28px; height: 28px; }
+    .btn { padding: 7px 8px; letter-spacing: 0.08em; }
+  }
 
   /* ===== お題モード:上部の掲示(お題名と残りひと匙) ===== */
   #odai-hud {
@@ -224,7 +235,7 @@
 
 <canvas id="cv"></canvas>
 <div id="title">金箔ひらひら</div>
-<div id="hint">触れて蒔き はらいて風</div>
+<div id="hint">触れて蒔き はらいてずらす</div>
 
 <div id="bar">
   <div class="swatch active" id="sw-gold"   title="金"></div>
@@ -289,6 +300,13 @@ const ctx = cv.getContext("2d");
 const sedCv  = document.createElement("canvas");
 const sedCtx = sedCv.getContext("2d");
 
+/* 記録から溢れたぶんを焼き付けておく下地。
+   指でずらすときは沈殿レイヤーを記録から描き直すので、記録を落とした箔が
+   消えてしまわないよう、落とす前にここへ写しておく。
+   resize() が触るので、沈殿レイヤーと同じところで用意する */
+const baseCv  = document.createElement("canvas");
+const baseCtx = baseCv.getContext("2d");
+
 let W = 0, H = 0, DPR = 1;
 
 /* ----- 端末解像度に合わせてCanvasを設定(リサイズ時は積もった箔を引き継ぐ) ----- */
@@ -306,8 +324,10 @@ function resize() {
   cv.width  = W * DPR; cv.height  = H * DPR;
   cv.style.width = W + "px"; cv.style.height = H + "px";
   sedCv.width = W * DPR; sedCv.height = H * DPR;
+  baseCv.width = W * DPR; baseCv.height = H * DPR;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   sedCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  baseCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
   if (old) sedCtx.drawImage(old, 0, 0, oldW / DPR, oldH / DPR); /* 論理座標系で貼り直し */
 }
 window.addEventListener("resize", resize);
@@ -379,39 +399,56 @@ function makeFlake(x, y, big) {
 const settled = [];
 const MAX_SETTLED_RECORDS = 5000;
 
-/* 箔を沈殿レイヤーに焼き込む(=漆に貼り付く) */
-function stampFlake(f) {
-  sedCtx.save();
-  sedCtx.translate(f.x, f.y);
-  sedCtx.rotate(f.rot);
-
-  const flipped = Math.random() < 0.08;   /* 約8%は裏返って貼り付く */
-  if (flipped) {
+/* 記録1枚を、指定のコンテキストへ描く(最初の焼き込みも描き直しも同じ道を通る) */
+function paintSettled(c, r) {
+  c.save();
+  c.translate(r.x, r.y);
+  c.rotate(r.rot);
+  if (r.flipped) {
     /* 裏面:光を返さない暗い箔。艶消しの陰が金属らしさを生む */
-    sedCtx.globalAlpha = 0.85;
-    sedCtx.fillStyle = shadeColor(f.color, 0.45);
-    drawPoly(sedCtx, f.verts, 1);
+    c.globalAlpha = 0.85;
+    c.fillStyle = r.color;
+    drawPoly(c, r.verts, 1);
   } else {
     /* 表面:明度の個体差を広めに取り、平坦さをなくす */
-    const bright = 0.55 + Math.random() * 0.45;
-    sedCtx.globalAlpha = bright;
-    sedCtx.fillStyle = f.color;
-    drawPoly(sedCtx, f.verts, 1);
+    c.globalAlpha = r.bright;
+    c.fillStyle = r.color;
+    drawPoly(c, r.verts, 1);
     /* ごく薄い縁のハイライトで箔の厚みを表現 */
-    sedCtx.globalAlpha = bright * 0.35;
-    sedCtx.strokeStyle = f.glint;
-    sedCtx.lineWidth = 0.5;
-    sedCtx.stroke();
+    c.globalAlpha = r.bright * 0.35;
+    c.strokeStyle = r.glint;
+    c.lineWidth = 0.5;
+    c.stroke();
   }
-  sedCtx.restore();
+  c.restore();
+}
 
-  settled.push({
+/* 沈殿レイヤーを、下地 + いまの記録から描き直す */
+function rebuildSediment() {
+  sedCtx.save();
+  sedCtx.setTransform(1, 0, 0, 1, 0, 0);
+  sedCtx.clearRect(0, 0, sedCv.width, sedCv.height);
+  sedCtx.drawImage(baseCv, 0, 0);
+  sedCtx.restore();
+  for (const r of settled) paintSettled(sedCtx, r);
+}
+
+/* 箔を沈殿レイヤーに焼き込む(=漆に貼り付く) */
+function stampFlake(f) {
+  const flipped = Math.random() < 0.08;   /* 約8%は裏返って貼り付く */
+  const rec = {
     x: f.x, y: f.y, size: f.size + 2, glint: f.glint,
-    /* 風で舞い上げるときに姿を復元するための情報 */
+    /* ずらすときに姿を復元するための情報 */
     verts: f.verts, rot: f.rot,
+    flipped, bright: 0.55 + Math.random() * 0.45,
     color: flipped ? shadeColor(f.color, 0.45) : f.color,
-  });
-  if (settled.length > MAX_SETTLED_RECORDS) settled.shift();
+  };
+  paintSettled(sedCtx, rec);
+  settled.push(rec);
+  if (settled.length > MAX_SETTLED_RECORDS) {
+    /* 記録から落とすぶんは、消えないよう下地へ焼き付けてから捨てる */
+    paintSettled(baseCtx, settled.shift());
+  }
 
   /* お題モード:この箔が型の内か外かを記録 */
   odaiRecord(f);
@@ -511,7 +548,7 @@ function hideHint() {
 
 /* フリック判定用:直近の指の軌跡(約100ms分)を覚えておく */
 const trail = [];
-const FLICK_SPEED = 2200;   /* これより速くはらうと風(px/秒)。速めのなぞりは撒き扱い */
+const FLICK_SPEED = 2200;   /* これより速く払うと「ずらす」(px/秒)。速めのなぞりは撒き扱い */
 
 function pushTrail(x, y) {
   const t = performance.now();
@@ -566,9 +603,14 @@ function onUp() {
       const vx = (b.x - a.x) / dtms * 1000;   /* px/秒 */
       const vy = (b.y - a.y) / dtms * 1000;
       if (Math.hypot(vx, vy) >= FLICK_SPEED) {
-        /* はらった!→ その方向へ一陣の風 */
-        gust(vx, vy);
-        if (odai.active) resetRound();   /* お題中は同じ型でやり直し */
+        if (odai.active) {
+          /* お題中は採点が絡むので、ずらさずに同じ型でやり直し */
+          resetRound();
+          washAway();
+        } else {
+          /* 払った!→ 指のそばの箔だけを、その向きへすべらせる */
+          slidePush(trail.slice(), b.x - a.x, b.y - a.y);
+        }
       }
     }
   }
@@ -613,94 +655,112 @@ function washAway() {
 }
 
 /* ============================================================
-   風:はらう(フリック)と、その方向へ箔が吹き流される
+   ずらす:指で払った「その場所の箔だけ」を、なぞった向きへ動かす
    ------------------------------------------------------------
-   ・貼り付いた箔を記録(settled)から粒子として蘇らせ、
-     風上から風下へ波が走るように順に浮き上がらせる
-   ・舞っている最中の箔にも風が当たる
-   ・はらった方向がそのまま風向きになる(斜め上に舞い上げるのも可)
+   もとは画面じゅうの箔をいっせいに舞い上げて飛ばしていたが、
+   それでは細かい直しに使えない。指の通り道のそばにある箔だけを
+   拾い上げ、すべらせて、少し先に置き直す。手で蒔絵をならす感じ。
+
+   ・指から遠いほど動かない(通り道からの距離でなだらかに弱まる)
+   ・動く距離は指の動いた量に比例する。ゆっくり払えば少しだけ動く
+   ・画面の外へは飛ばさない。必ずどこかに落ち着く
    ============================================================ */
-const blown = [];              /* 風に飛ばされている箔 */
-let wind = null;               /* { t, dur, dx, dy } 吹いている風(dx,dyは単位ベクトル) */
+const sliding = [];            /* すべっている最中の箔 */
+const PUSH_RADIUS = 78;        /* 指の通り道から、この距離までが動く(px) */
+const PUSH_MAX = 130;          /* いちばん強いときでも、これ以上は動かさない(px) */
+const PUSH_DUR = 0.28;         /* すべっている時間(秒) */
 
-function gust(dx, dy) {
-  /* 方向を正規化 */
-  const len = Math.hypot(dx, dy) || 1;
-  dx /= len; dy /= len;
-  wind = { t: 0, dur: 1.8, dx, dy };
+/* 点と線分の距離 */
+function distToSegment(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  if (len2 === 0) return Math.hypot(px - ax, py - ay);
+  let t = ((px - ax) * dx + (py - ay) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (ax + dx * t), py - (ay + dy * t));
+}
 
-  /* 画面四隅を風向きに射影して、風上0〜風下1の範囲を求める */
-  const corners = [[0,0],[W,0],[0,H],[W,H]];
-  let pMin = Infinity, pMax = -Infinity;
-  for (const [cx, cy] of corners) {
-    const p = cx * dx + cy * dy;
-    if (p < pMin) pMin = p;
-    if (p > pMax) pMax = p;
+/* 指の通り道(点列)からの、いちばん近い距離 */
+function distToPath(px, py, path) {
+  let d = Infinity;
+  for (let i = 1; i < path.length; i++) {
+    d = Math.min(d, distToSegment(px, py, path[i - 1].x, path[i - 1].y, path[i].x, path[i].y));
+    if (d === 0) break;
   }
-  const span = pMax - pMin || 1;
+  return d;
+}
 
-  /* 積もった箔をすべて粒子に戻す。風上側から順に浮き上がる */
-  for (const s of settled) {
-    const along = ((s.x * dx + s.y * dy) - pMin) / span;   /* 風上=0, 風下=1 */
-    const speed = 1.5 + Math.random() * 2.5;
-    blown.push({
-      x: s.x, y: s.y,
-      verts: s.verts, rot: s.rot, color: s.color, glint: s.glint,
-      wait: along * 0.7 + Math.random() * 0.25,            /* 波が走る時間差 */
-      vx: dx * speed,
-      vy: dy * speed - (0.5 + Math.random() * 1.0),        /* ふわっと浮き上がる */
-      awx: dx * 6, awy: dy * 6,                            /* 風向きの加速 */
-      vr: (Math.random() - 0.5) * 0.25,
-      facePhase: Math.random() * Math.PI * 2,
-      faceRate: 0.1 + Math.random() * 0.12,                /* 風の中では激しくひらめく */
+/* 払った:通り道のそばの箔を拾って、なぞった向きへすべらせる */
+function slidePush(path, dx, dy) {
+  const travel = Math.hypot(dx, dy);
+  if (travel < 1) return 0;
+  const ux = dx / travel, uy = dy / travel;
+  const reach = Math.min(travel, PUSH_MAX);     /* 指が動いたぶんだけ動かす */
+
+  const kept = [];
+  let moved = 0;
+  for (const r of settled) {
+    const d = distToPath(r.x, r.y, path);
+    if (d >= PUSH_RADIUS) { kept.push(r); continue; }
+    /* 通り道の真上がいちばん強く、離れるほどなだらかに弱まる */
+    const w = Math.pow(1 - d / PUSH_RADIUS, 1.3);
+    const dist = reach * w;
+    if (dist < 0.6) { kept.push(r); continue; }   /* ほとんど動かないものは置いたまま */
+    /* すべる先。ほんの少しだけ横にも散らす(手でならしたときのばらつき) */
+    const jitter = (Math.random() - 0.5) * 6 * w;
+    sliding.push({
+      rec: r,
+      x0: r.x, y0: r.y,
+      x1: r.x + ux * dist - uy * jitter,
+      y1: r.y + uy * dist + ux * jitter,
+      rot0: r.rot,
+      rot1: r.rot + (Math.random() - 0.5) * 0.5 * w,
+      t: 0, dur: PUSH_DUR * (0.8 + Math.random() * 0.4),
     });
+    moved++;
   }
-  /* 沈殿レイヤーは即クリア(以降は粒子が姿を引き継ぐ) */
-  sedCtx.clearRect(0, 0, W, H);
+  if (moved === 0) return 0;
+
+  /* 拾った箔は沈殿レイヤーから外す(残った記録から描き直す) */
   settled.length = 0;
+  for (const r of kept) settled.push(r);
+  rebuildSediment();
   sparkles.length = 0;
+  return moved;
 }
 
-/* 風に飛ばされている箔の更新と描画 */
-function updateBlown(dt) {
-  if (!wind && blown.length === 0) return;
-  if (wind) {
-    wind.t += dt;
-    if (wind.t > wind.dur) wind = null;
+/* すべっている箔を進め、着いたものは置き直す */
+function updateSliding(dt) {
+  for (let i = sliding.length - 1; i >= 0; i--) {
+    const s = sliding[i];
+    s.t += dt;
+    if (s.t < s.dur) continue;
+    /* 着いた:その場所へ置き直して、また記録に戻す */
+    const r = s.rec;
+    r.x = s.x1; r.y = s.y1; r.rot = s.rot1;
+    /* 画面の中に収める */
+    r.x = Math.max(2, Math.min(W - 2, r.x));
+    r.y = Math.max(2, Math.min(H - 2, r.y));
+    paintSettled(sedCtx, r);
+    settled.push(r);
+    sliding.splice(i, 1);
   }
-  for (let i = blown.length - 1; i >= 0; i--) {
-    const b = blown[i];
-    if (b.wait > 0) { b.wait -= dt; continue; }   /* まだ風が届いていない */
-    /* 風向きへ加速しつつ、乱流でゆらぐ */
-    b.vx += b.awx * dt + (Math.random() - 0.5) * 4 * dt;
-    b.vy += b.awy * dt + (Math.random() - 0.42) * 6 * dt;
-    b.x += b.vx;
-    b.y += b.vy;
-    b.rot += b.vr;
-    b.facePhase += b.faceRate;
-    if (b.x < -30 || b.x > W + 30 || b.y < -30 || b.y > H + 30) {
-      blown.splice(i, 1);
-    }
+  if (settled.length > MAX_SETTLED_RECORDS) {
+    paintSettled(baseCtx, settled.shift());
   }
 }
 
-function drawBlown() {
-  for (const b of blown) {
-    const face = Math.sin(b.facePhase);
-    const yScale = Math.abs(face) * 0.85 + 0.15;
-    const bright = Math.abs(face);
+function drawSliding() {
+  for (const s of sliding) {
+    const p = Math.min(s.t / s.dur, 1);
+    const e = 1 - Math.pow(1 - p, 3);           /* すっと出て、ふわりと止まる */
+    const r = s.rec;
     ctx.save();
-    ctx.translate(b.x, b.y);
-    ctx.rotate(b.rot);
-    ctx.fillStyle = b.color;
-    ctx.globalAlpha = 0.55 + bright * 0.45;
-    drawPoly(ctx, b.verts, yScale);
-    if (bright > 0.88) {
-      ctx.globalCompositeOperation = "lighter";
-      ctx.globalAlpha = (bright - 0.88) / 0.12 * 0.7;
-      ctx.fillStyle = b.glint;
-      drawPoly(ctx, b.verts, yScale);
-    }
+    ctx.translate(s.x0 + (s.x1 - s.x0) * e, s.y0 + (s.y1 - s.y0) * e);
+    ctx.rotate(s.rot0 + (s.rot1 - s.rot0) * e);
+    ctx.globalAlpha = r.flipped ? 0.85 : r.bright;
+    ctx.fillStyle = r.color;
+    drawPoly(ctx, r.verts, 1);
     ctx.restore();
   }
 }
@@ -1053,12 +1113,6 @@ function frame(now) {
     const f = flakes[i];
     f.vy += 2.2 * dt;                        /* 弱い重力 */
     f.vy = Math.min(f.vy, 1.6);              /* 終端速度(ひらひら感を保つ) */
-    /* 風が吹いていれば流される(小さい箔ほどよく飛ぶ) */
-    if (wind) {
-      const power = (4.5 - f.grade * 1.2) * dt;
-      f.vx += wind.dx * power;
-      f.vy += wind.dy * power - 0.8 * dt;    /* 風でわずかに浮く */
-    }
     f.swayPhase += (1.5 + f.swayAmp) * dt * 2.2;
     f.x += f.vx + Math.sin(f.swayPhase) * f.swayAmp;
     f.y += f.vy;
@@ -1077,7 +1131,7 @@ function frame(now) {
   }
 
   updateSparkles(dt);
-  updateBlown(dt);
+  updateSliding(dt);
 
   /* --- 描画 --- */
   drawBackground(ctx);
@@ -1097,8 +1151,8 @@ function frame(now) {
   /* 積もった箔 */
   ctx.drawImage(sedCv, 0, 0, W, H);
 
-  /* 風に飛ばされている箔 */
-  drawBlown();
+  /* すべっている最中の箔 */
+  drawSliding();
 
   /* お題の型の輪郭(積もった箔の上、舞う箔の下) */
   drawShapeOutline();
@@ -1144,12 +1198,12 @@ requestAnimationFrame(frame);
    中身を確かめる手立てがこれしかない。動作には関わらない。
    ============================================================ */
 window.__app = {
-  flakes, settled, blown, sparkles, odai, SHAPES,
+  flakes, settled, sliding, sparkles, odai, SHAPES,
   Core,
+  slidePush, PUSH_RADIUS,
   get records() { return records; },
   setRecords(r) { records = Core.reviveRecords(r); saveRecords(); },
   composeArtwork,
-  get wind() { return wind; },
   /* 型を指定して組み直す(採点の当たり判定に使うPath2Dが手に入る) */
   useShape(i) {
     odai.shapeIdx = i;

@@ -485,6 +485,100 @@ async function run() {
     ok(art.gold > 100, `写した絵に箔が写っている (${art.gold} 画素)`);
     await ctxA.close();
 
+    /* ------------------------------------------------------------------
+       見張り ⑩: 払うと、そのあたりの箔だけがずれる
+
+       もとは画面じゅうの箔がいっせいに飛んでいってしまい、細かい直しに
+       使えなかった。指の通り道のそばだけが、なぞった向きへずれること、
+       離れた場所は1枚も動かないこと、総数が減らない(飛んでいかない)ことを見る。
+       ------------------------------------------------------------------ */
+    section('払うとそのあたりだけずれる (見張り⑩)');
+    const ctxW = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+    const pw = await ctxW.newPage();
+    pw.on('pageerror', (e) => errors.push('見張り⑩: ' + e.message));
+    await pw.goto(URL);
+    await pw.waitForFunction(() => window.__app);
+
+    // 上と下、離れた二か所に蒔く
+    for (const y of [220, 560]) {
+      await pw.mouse.move(195, y);
+      await pw.mouse.down();
+      for (let i = 0; i < 24; i++) { await pw.mouse.move(195 + Math.sin(i / 2) * 80, y); await sleep(14); }
+      await pw.mouse.up();
+      await sleep(4200);          // 落ちきるまで待つ (終端速度 約96px/秒で最大280px)
+    }
+    await sleep(1200);
+
+    const 位置 = () => pw.evaluate(() => window.__app.settled.map((r) => ({ x: r.x, y: r.y })));
+    const before = await 位置();
+    ok(before.length > 200, `二か所に箔が積もった (${before.length}枚)`);
+
+    // 上の山だけを右へ払う
+    const moved = await pw.evaluate(async () => {
+      const cv = document.getElementById('cv');
+      const ev = (t, x, y) => cv.dispatchEvent(new PointerEvent(t, {
+        clientX: x, clientY: y, bubbles: true, cancelable: true, pointerId: 1, pointerType: 'touch' }));
+      ev('pointerdown', 90, 330);
+      for (let i = 1; i <= 6; i++) {
+        await new Promise((r) => setTimeout(r, 6));
+        ev('pointermove', 90 + i * 38, 330);
+      }
+      window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }));
+      return window.__app.sliding.length;
+    });
+    ok(moved > 0, `払うと、そのあたりの箔がすべり出す (${moved}枚)`);
+    await sleep(1500);
+    const after = await 位置();
+
+    // 総数が減っていない = 飛んでいっていない
+    // (払う動作そのものが少し蒔くので、増えるぶんには構わない)
+    ok(after.length >= before.length,
+      `払っても箔が飛んでいかない (${before.length}枚 → ${after.length}枚)`);
+
+    // 払った高さ(330付近)の箔は右へ動き、遠い下の山は1枚も動いていない
+    const 近く = (a) => a.filter((r) => Math.abs(r.y - 330) < 70);
+    const 遠く = (a) => a.filter((r) => r.y > 520);
+    const 平均x = (a) => a.reduce((s2, r) => s2 + r.x, 0) / (a.length || 1);
+    const 近前 = 平均x(近く(before)), 近後 = 平均x(近く(after));
+    const 遠前 = 平均x(遠く(before)), 遠後 = 平均x(遠く(after));
+    ok(近後 - 近前 > 10,
+      `払ったあたりの箔が、なぞった向きへずれる (平均x ${近前.toFixed(0)} → ${近後.toFixed(0)})`);
+    ok(Math.abs(遠後 - 遠前) < 1,
+      `離れた場所の箔は動かない (平均x ${遠前.toFixed(0)} → ${遠後.toFixed(0)})`);
+    ok(遠く(after).length === 遠く(before).length,
+      `離れた場所の枚数も変わらない (${遠く(before).length}枚)`);
+    await ctxW.close();
+
+    /* ------------------------------------------------------------------
+       見張り ⑪: 操作帯が、小さい端末でも横に溢れない
+       ------------------------------------------------------------------ */
+    section('操作帯が溢れない (見張り⑪)');
+    for (const [vw, vh, label] of [[320, 568, 'iPhone SE'], [390, 844, 'iPhone 13']]) {
+      const ctxBar = await browser.newContext({ viewport: { width: vw, height: vh }, deviceScaleFactor: 2 });
+      const pbar = await ctxBar.newPage();
+      pbar.on('pageerror', (e) => errors.push('見張り⑪: ' + e.message));
+      await pbar.goto(URL);
+      await pbar.waitForTimeout(400);
+      const bar = await pbar.evaluate(() => {
+        const el = document.getElementById('bar');
+        const kids = [...el.children].map((k) => k.getBoundingClientRect());
+        /* 仕切り線は飾りなので、押せる大きさの対象から外す */
+        const 押す = [...el.querySelectorAll('.swatch, .btn')].map((k) => k.getBoundingClientRect());
+        return {
+          溢れ: el.scrollWidth - Math.round(el.getBoundingClientRect().width),
+          はみ出し: kids.some((k) => k.left < 0 || k.right > innerWidth),
+          一段: kids.every((k) => Math.abs(k.top - kids[0].top) < 20),
+          押せる数: 押す.length,
+          最小の押し所: Math.min(...押す.map((k) => Math.min(k.width, k.height))),
+        };
+      });
+      ok(bar.溢れ <= 0 && !bar.はみ出し, `${label}: 操作帯が横に溢れない`);
+      ok(bar.一段, `${label}: 操作帯が一段に収まる`);
+      ok(bar.最小の押し所 >= 28,
+        `${label}: ${bar.押せる数}つの操作すべてが指で押せる大きさ (最小 ${Math.round(bar.最小の押し所)}px)`);
+      await ctxBar.close();
+    }
+
     // ------------------------------------------------ アイコン
     section('アイコン');
     const apple = await phone.evaluate(() =>
