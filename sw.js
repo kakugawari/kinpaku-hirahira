@@ -4,11 +4,12 @@
    - アイコンなどの変わらない物はキャッシュ優先で即表示
    - 更新時はキャッシュ名(バージョン)を変えると古い物を掃除
    ============================================================ */
-const CACHE_NAME = "kinpaku-hirahira-v3";
+const CACHE_NAME = "kinpaku-hirahira-v4";
 
 const ASSETS = [
   "./",
   "./index.html",
+  "./core.js",
   "./manifest.json",
   "./icon-192.png",
   "./icon-512.png",

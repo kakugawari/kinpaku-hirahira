@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "start": "node serve.js",
+    "test": "node --test *.test.js",
     "test:ui": "node browser-test.js"
   },
   "license": "MIT"

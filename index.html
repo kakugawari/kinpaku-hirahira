@@ -147,7 +147,77 @@
     color: rgba(230,210,170,0.55);
     font-size: 12px; letter-spacing: 0.15em;
   }
-  #result-buttons { display: flex; gap: 12px; margin-top: 4px; }
+  #result-buttons { display: flex; gap: 10px; margin-top: 4px; flex-wrap: wrap; justify-content: center; }
+  #result-note {
+    color: #e6cd8c;
+    font-size: 12px; letter-spacing: 0.12em;
+  }
+  #result-limit {
+    color: rgba(230,210,170,0.45);
+    font-size: 11px; letter-spacing: 0.1em;
+    margin-top: -8px;
+  }
+
+  /* お題の難易度 */
+  #odai-level {
+    color: rgba(230,205,140,0.7);
+    font-size: 11px; letter-spacing: 0.3em;
+  }
+
+  /* ===== 記録の帳 ===== */
+  #book {
+    position: fixed; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    box-sizing: border-box;
+    width: max-content;
+    max-width: min(360px, calc(100vw - 32px));
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
+    display: none;
+    flex-direction: column; align-items: center; gap: 12px;
+    padding: 24px 28px;
+    background: rgba(8,8,8,0.95);
+    border: 1px solid rgba(201,162,75,0.4);
+    border-radius: 6px;
+    box-shadow: 0 0 40px rgba(0,0,0,0.7);
+  }
+  #book.show { display: flex; }
+  #book-grade {
+    color: #f0d878;
+    font-size: 26px; letter-spacing: 0.3em;
+    text-shadow: 0 0 16px rgba(240,216,120,0.35);
+  }
+  #book-summary {
+    color: rgba(230,210,170,0.7);
+    font-size: 12px; letter-spacing: 0.1em; text-align: center;
+  }
+  #book-table {
+    border-collapse: collapse;
+    color: rgba(230,210,170,0.8);
+    font-size: 12px; letter-spacing: 0.08em;
+  }
+  #book-table td { padding: 4px 8px; white-space: nowrap; }
+  #book-table td.name { color: rgba(230,205,140,0.95); }
+  #book-table td.rank-名人 { color: #f0d878; }
+  #book-table td.rank-まだ { color: rgba(200,190,170,0.35); }
+
+  /* 写したときの知らせ */
+  #toast {
+    position: fixed; left: 50%; bottom: 76px;
+    transform: translateX(-50%);
+    box-sizing: border-box;
+    max-width: calc(100vw - 32px);
+    padding: 8px 16px;
+    background: rgba(8,8,8,0.9);
+    border: 1px solid rgba(201,162,75,0.35);
+    border-radius: 4px;
+    color: rgba(230,210,170,0.9);
+    font-size: 12px; letter-spacing: 0.12em;
+    white-space: nowrap;
+    opacity: 0; transition: opacity 0.3s ease;
+    pointer-events: none;
+  }
+  #toast.show { opacity: 1; }
 </style>
 </head>
 <body>
@@ -162,11 +232,14 @@
   <div class="swatch"        id="sw-copper" title="赤金"></div>
   <div class="divider"></div>
   <button class="btn" id="btn-odai">お題</button>
+  <button class="btn" id="btn-save">写す</button>
+  <button class="btn" id="btn-book">記録</button>
 </div>
 
 <!-- お題モード:上部掲示 -->
 <div id="odai-hud">
   <div id="odai-name"></div>
+  <div id="odai-level"></div>
   <div id="odai-gauge"><div id="odai-gauge-fill"></div></div>
   <div id="odai-gauge-label">ひと匙</div>
 </div>
@@ -175,15 +248,31 @@
 <div id="result">
   <div id="result-rank"></div>
   <div id="result-detail"></div>
+  <div id="result-limit"></div>
+  <div id="result-note"></div>
   <div id="result-word"></div>
   <div id="result-buttons">
-    <button class="btn" id="btn-retry">もう一度</button>
+    <button class="btn" id="btn-retry">次の型へ</button>
+    <button class="btn" id="btn-again">同じ型で</button>
     <button class="btn" id="btn-free">自由に戻る</button>
   </div>
 </div>
 
+<div id="toast"></div>
+
+<!-- 記録の帳 -->
+<div id="book">
+  <div id="book-grade"></div>
+  <div id="book-summary"></div>
+  <table id="book-table"></table>
+  <button class="btn" id="btn-book-close">閉じる</button>
+</div>
+
+<script src="./core.js"></script>
 <script>
 "use strict";
+
+const Core = window.KinpakuCore;
 
 /* ============================================================
    金箔散らし
@@ -627,61 +716,21 @@ function drawBlown() {
    ・評価は 見習い → 職人 → 名人
    ============================================================ */
 
-/* 型の定義:単位座標(-1〜1)でPath2Dを組む */
-const SHAPES = [
-  { name: "駒", build() {
-      /* 将棋駒の五角形:頂点・肩・裾 */
-      const p = new Path2D();
-      p.moveTo(0, -1);
-      p.lineTo(0.55, -0.5);
-      p.lineTo(0.70, 1);
-      p.lineTo(-0.70, 1);
-      p.lineTo(-0.55, -0.5);
-      p.closePath();
-      return p;
-    } },
-  { name: "三日月", build() {
-      /* 外弧(右のふくらみ)+内弧(右へ切れ込む)で三日月に。
-         内弧は外円を「削る」ように、内側へ膨らませる必要がある。
-         中心を左(cx<0)に置き、逆回りに描くと x=+0.3 を通って削れる */
-      const p = new Path2D();
-      p.moveTo(0, -1);
-      p.arc(0, 0, 1, -Math.PI / 2, Math.PI / 2, false);       /* 外側の弧 */
-      const cx = -1.5, r2 = Math.hypot(cx, 1);                 /* 内側の弧の中心と半径 */
-      p.arc(cx, 0, r2, Math.atan2(1, -cx), Math.atan2(-1, -cx), true);
-      p.closePath();
-      /* 欠けたぶん右に寄るので、見た目の中心を原点へ戻す
-         (左端は cx+r2、右端は 1) */
-      const centered = new Path2D();
-      centered.addPath(p, new DOMMatrix().translate(-((cx + r2) + 1) / 2, 0));
-      return centered;
-    } },
-  { name: "扇", build() {
-      /* 上に開く扇形(外弧+内弧の帯) */
-      const p = new Path2D();
-      const a0 = -Math.PI * 5 / 6, a1 = -Math.PI / 6;          /* -150°〜-30° */
-      p.moveTo(Math.cos(a0) * 0.35, Math.sin(a0) * 0.35 + 0.55);
-      p.lineTo(Math.cos(a0) * 1.05, Math.sin(a0) * 1.05 + 0.55);
-      p.arc(0, 0.55, 1.05, a0, a1, false);
-      p.lineTo(Math.cos(a1) * 0.35, Math.sin(a1) * 0.35 + 0.55);
-      p.arc(0, 0.55, 0.35, a1, a0, true);
-      p.closePath();
-      return p;
-    } },
-  { name: "富士", build() {
-      /* 山の稜線:頂は雪形にぎざぎざと */
-      const p = new Path2D();
-      p.moveTo(-1, 0.62);
-      p.lineTo(-0.36, -0.52);
-      p.lineTo(-0.18, -0.40);
-      p.lineTo(0, -0.55);
-      p.lineTo(0.18, -0.40);
-      p.lineTo(0.36, -0.52);
-      p.lineTo(1, 0.62);
-      p.closePath();
-      return p;
-    } },
-];
+/* 型は core.js が持つ。ここでは点列を Path2D に起こすだけ。
+   面積・ひと匙の量・こぼれの許し幅・難易度は、すべて型の形から
+   計算で決まる(core.js)。手で数字を振らない */
+const SHAPES = Core.buildShapes();
+
+/* 点列から Path2D を作る */
+function pathOf(points, m) {
+  const p = new Path2D();
+  p.moveTo(points[0][0], points[0][1]);
+  for (let i = 1; i < points.length; i++) p.lineTo(points[i][0], points[i][1]);
+  p.closePath();
+  const out = new Path2D();
+  out.addPath(p, m);
+  return out;
+}
 
 /* 点の内外判定専用の小さなコンテキスト(変換の影響を受けないように分離) */
 const hitCtx = document.createElement("canvas").getContext("2d");
@@ -690,7 +739,7 @@ const odai = {
   active: false,
   shapeIdx: 0,
   tPath: null,          /* 画面座標に変換済みのPath2D */
-  budgetMax: 300,       /* ひと匙 = 箔300枚 */
+  budgetMax: 0,         /* ひと匙。型の広さから決まる(core.js) */
   budget: 0,
   inW: 0, outW: 0,      /* 内/外に落ちた箔の重み(面積)合計 */
   zoneSet: new Set(),   /* 型の内側にある升目(埋まり判定用) */
@@ -702,16 +751,38 @@ const odai = {
 
 const hud = document.getElementById("odai-hud");
 const hudName = document.getElementById("odai-name");
+const hudLevel = document.getElementById("odai-level");
+const hudLabel = document.getElementById("odai-gauge-label");
 const hudFill = document.getElementById("odai-gauge-fill");
 const resultEl = document.getElementById("result");
+
+/* ============================================================
+   記録:型ごとの最高、名人の数、連続。端末に残す
+   ------------------------------------------------------------
+   畳み込みと段位の計算は core.js 側(DOMを触らないのでテストできる)。
+   ここは読み書きだけを受け持つ
+   ============================================================ */
+const STORE_KEY = "kinpaku-records-v1";
+let records = Core.emptyRecords();
+
+function loadRecords() {
+  try {
+    records = Core.reviveRecords(JSON.parse(localStorage.getItem(STORE_KEY)));
+  } catch (_) {
+    records = Core.emptyRecords();   /* 読めなくても遊べるようにする */
+  }
+}
+function saveRecords() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(records)); } catch (_) { /* 容量超過などは黙って諦める */ }
+}
+loadRecords();
 
 /* 型を画面中央に配置し、升目(埋まり判定のマス)を敷き直す */
 function buildShapeGeometry() {
   const s = Math.min(W, H) * 0.32;          /* 型の大きさ */
   const cx = W / 2, cy = H * 0.42;          /* 少し上寄りに置く(下は操作帯) */
   const m = new DOMMatrix().translate(cx, cy).scale(s);
-  odai.tPath = new Path2D();
-  odai.tPath.addPath(SHAPES[odai.shapeIdx].build(), m);
+  odai.tPath = pathOf(SHAPES[odai.shapeIdx].points, m);
 
   /* 型を覆う範囲に升目を敷き、中心が型の内側にある升だけ登録 */
   const step = s * 0.27;
@@ -732,13 +803,17 @@ function buildShapeGeometry() {
 
 /* ラウンド開始/やり直し(型は変えずに匙と記録をリセット) */
 function resetRound() {
+  const shape = SHAPES[odai.shapeIdx];
+  odai.budgetMax = shape.budget;        /* ひと匙は型の広さぶん */
   odai.budget = odai.budgetMax;
   odai.inW = 0; odai.outW = 0;
   odai.zoneHit.clear();
   odai.result = null;
   odai.settleTimer = 0;
   resultEl.classList.remove("show");
-  hudName.textContent = "『" + SHAPES[odai.shapeIdx].name + "』に蒔く";
+  hudName.textContent = "『" + shape.name + "』に蒔く";
+  hudLevel.textContent = "◆".repeat(shape.difficulty) + "◇".repeat(5 - shape.difficulty);
+  hudLabel.textContent = "ひと匙 " + odai.budgetMax + "枚";
   hudFill.style.width = "100%";
 }
 
@@ -773,9 +848,95 @@ document.getElementById("btn-odai").addEventListener("click", () => {
   odai.active ? endOdai() : startOdai(true);
 });
 document.getElementById("btn-retry").addEventListener("click", () => {
-  startOdai(true);   /* 新しい型で次のお題へ */
+  startOdai(true);   /* 別の型へ */
+});
+document.getElementById("btn-again").addEventListener("click", () => {
+  startOdai(false);  /* 同じ型でやり直す */
 });
 document.getElementById("btn-free").addEventListener("click", endOdai);
+
+/* ============================================================
+   記録の帳
+   ============================================================ */
+const bookEl = document.getElementById("book");
+
+function showBook() {
+  const g = Core.grade(records, SHAPES.length);
+  document.getElementById("book-grade").textContent = g.name;
+  document.getElementById("book-summary").textContent =
+    "名人の型 " + g.done + "/" + g.of + " ・ 蒔いた回数 " + records.rounds +
+    " ・ 連続の最高 " + records.bestStreak;
+
+  const rows = SHAPES.map((sh) => {
+    const b = records.best[sh.name];
+    const rank = b ? b.rank : "まだ";
+    const detail = b ? Math.round(b.fill * 100) + "% / " + Math.round(b.spill * 100) + "%" : "—";
+    return "<tr><td class=\"name\">『" + sh.name + "』</td>" +
+           "<td>" + "◆".repeat(sh.difficulty) + "</td>" +
+           "<td class=\"rank-" + rank + "\">" + rank + "</td>" +
+           "<td>" + detail + "</td></tr>";
+  }).join("");
+  document.getElementById("book-table").innerHTML = rows;
+  bookEl.classList.add("show");
+}
+
+document.getElementById("btn-book").addEventListener("click", showBook);
+document.getElementById("btn-book-close").addEventListener("click", () => {
+  bookEl.classList.remove("show");
+});
+
+/* ============================================================
+   写す:いま積もっている箔を1枚の絵にして、残す/送る
+   ============================================================ */
+const toastEl = document.getElementById("toast");
+let toastTimer = 0;
+
+function toast(text) {
+  toastEl.textContent = text;
+  toastEl.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove("show"), 2200);
+}
+
+/* 画面の飾り(型の輪郭・舞っている箔)を除いた、作品そのものを組む */
+function composeArtwork() {
+  const out = document.createElement("canvas");
+  out.width = sedCv.width; out.height = sedCv.height;
+  const c = out.getContext("2d");
+  c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  drawBackground(c);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.drawImage(sedCv, 0, 0);
+  /* 隅に題字を小さく添える */
+  c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  c.fillStyle = "rgba(201,162,75,0.75)";
+  c.font = '13px "Hiragino Mincho ProN", "Yu Mincho", serif';
+  c.textAlign = "right";
+  c.fillText("金箔ひらひら", W - 16, H - 16);
+  return out;
+}
+
+function saveArtwork() {
+  if (settled.length === 0) { toast("まだ何も蒔かれていません"); return; }
+  const out = composeArtwork();
+  out.toBlob((blob) => {
+    if (!blob) { toast("写せませんでした"); return; }
+    const file = new File([blob], "kinpaku.png", { type: "image/png" });
+    /* 送れる端末では共有シートへ。だめなら保存する */
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share({ files: [file] }).then(() => toast("送りました")).catch(() => { /* 取り消しは何もしない */ });
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "kinpaku.png";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    toast("写しました");
+  }, "image/png");
+}
+
+document.getElementById("btn-save").addEventListener("click", saveArtwork);
 
 /* 画面回転などでサイズが変わったら、型と升目を敷き直す */
 window.addEventListener("resize", () => {
@@ -798,23 +959,39 @@ function odaiRecord(f) {
 
 /* 採点:埋まり(升目の踏破率)とこぼれ(外に落ちた重みの割合) */
 function judgeOdai() {
+  const shape = SHAPES[odai.shapeIdx];
   const fill  = odai.zoneSet.size > 0 ? odai.zoneHit.size / odai.zoneSet.size : 0;
   const total = odai.inW + odai.outW;
   const spill = total > 0 ? odai.outW / total : 1;
 
-  let rank, word;
-  if (fill >= 0.70 && spill <= 0.20) {
-    rank = "名人"; word = "見事な蒔きぶり。師も唸る手際です";
-  } else if (fill >= 0.45 && spill <= 0.40) {
-    rank = "職人"; word = "堂に入った撒き心地。名人まであと少し";
-  } else {
-    rank = "見習い"; word = "風を読み、少し上から漂わせてみましょう";
-  }
+  /* 採点の線引きは型ごとに違う(細い型はこぼれを多めに許す)。core.js が決める */
+  const { rank, word } = Core.judge(fill, spill, shape);
+  const result = { rank, fill, spill };
+  odai.result = result;
 
-  odai.result = { rank, fill, spill };
+  /* 記録を更新する前に、これが自己最高を塗り替えたかを見る */
+  const prev = records.best[shape.name];
+  const 初めて = !prev;
+  const 塗り替え = prev && Core.rankValue(rank) > Core.rankValue(prev.rank);
+  records = Core.applyResult(records, shape.name, result);
+  saveRecords();
+
   document.getElementById("result-rank").textContent = rank;
   document.getElementById("result-detail").textContent =
     "埋まり " + Math.round(fill * 100) + "% ・ こぼれ " + Math.round(spill * 100) + "%";
+  /* この型でこぼれをどこまで許すかは形で決まる。目標が見えるように出す */
+  document.getElementById("result-limit").textContent =
+    "この型は こぼれ " + Math.round(shape.spillMax * 100) + "% まで";
+
+  /* 自己最高・連続・段位のうち、いちばん嬉しいものを一行で出す */
+  const g = Core.grade(records, SHAPES.length);
+  let note = "";
+  if (g.name === "皆伝" && 塗り替え) note = "皆伝。すべての型で名人です";
+  else if (塗り替え || (初めて && Core.rankValue(rank) > 0)) note = "『" + shape.name + "』の自己最高";
+  else if (records.streak >= 2) note = records.streak + " 回続けて職人以上";
+  else if (g.done > 0) note = "名人の型 " + g.done + " / " + g.of + "  (" + g.name + ")";
+  document.getElementById("result-note").textContent = note;
+
   document.getElementById("result-word").textContent = word;
   resultEl.classList.add("show");
 }
@@ -968,6 +1145,10 @@ requestAnimationFrame(frame);
    ============================================================ */
 window.__app = {
   flakes, settled, blown, sparkles, odai, SHAPES,
+  Core,
+  get records() { return records; },
+  setRecords(r) { records = Core.reviveRecords(r); saveRecords(); },
+  composeArtwork,
   get wind() { return wind; },
   /* 型を指定して組み直す(採点の当たり判定に使うPath2Dが手に入る) */
   useShape(i) {

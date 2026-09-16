@@ -236,6 +236,7 @@ async function run() {
         document.getElementById('result-rank').textContent = '見習い';
         document.getElementById('result-detail').textContent = '埋まり 57% ・ こぼれ 53%';
         document.getElementById('result-word').textContent = '風を読み、少し上から漂わせてみましょう';
+        document.getElementById('result-limit').textContent = 'この型は こぼれ 38% まで';
         const box = el.getBoundingClientRect();
         const lines = (id) => {
           const e = document.getElementById(id);
@@ -247,6 +248,7 @@ async function run() {
           w: Math.round(box.width),
           rank: lines('result-rank'),
           detail: lines('result-detail'),
+          limit: lines('result-limit'),
           はみ出し: box.left < 0 || box.right > innerWidth || box.top < 0 || box.bottom > innerHeight,
           ボタン: (() => {
             const btns = [...document.querySelectorAll('#result-buttons .btn')];
@@ -267,6 +269,7 @@ async function run() {
       });
       ok(m.rank === 1, `${label}: 評価が1行に収まる (パネル幅 ${m.w}px / 画面 ${vw}px)`);
       ok(m.detail === 1, `${label}: 「埋まり・こぼれ」が1行に収まる`);
+      ok(m.limit === 1, `${label}: こぼれの許容が1行に収まる`);
       ok(m.ボタン.横並び && m.ボタン.一行, `${label}: ボタンの文字が縦に割れず横に並ぶ`);
       ok(!m.はみ出し, `${label}: パネルが画面からはみ出さない`);
       await ctxP.close();
@@ -302,8 +305,15 @@ async function run() {
           内側の幅 += 0.01;
         }
       }
+      /* 型ぜんたいが画面の中央に置かれているかは、枠の中心で見る。
+         三日月は真ん中の高さの断面が左右非対称なので、断面では測れない */
+      let bx0 = Infinity, bx1 = -Infinity, by0 = Infinity, by1 = -Infinity;
+      for (const [x, y] of window.__app.SHAPES[idx].points) {
+        if (x < bx0) bx0 = x; if (x > bx1) bx1 = x;
+        if (y < by0) by0 = y; if (y > by1) by1 = y;
+      }
       return { 名前: names[idx], 左端, 右端, 内側の幅: +内側の幅.toFixed(2),
-               中心ずれ: +((左端 + 右端) / 2).toFixed(2) };
+               枠の中心: [+((bx0 + bx1) / 2).toFixed(3), +((by0 + by1) / 2).toFixed(3)] };
     });
     // 三日月なら、中央の高さの「肉」は外円の直径よりずっと細い。
     // レンズ形(直す前)だと -0.3〜1.0 = 1.3 になる。
@@ -311,8 +321,8 @@ async function run() {
       `中央の高さで型が細い = 欠けている (${moon.名前}: 肉の厚み ${moon.内側の幅} / 左端 ${moon.左端} 右端 ${moon.右端})`);
     ok(moon.右端 - moon.左端 < 0.8,
       `欠けが外円の内側に入っている (左端 ${moon.左端} 右端 ${moon.右端})`);
-    ok(Math.abs(moon.中心ずれ) < 0.06,
-      `型が画面の中央に来ている (中心ずれ ${moon.中心ずれ})`);
+    ok(Math.abs(moon.枠の中心[0]) < 0.01 && Math.abs(moon.枠の中心[1]) < 0.01,
+      `型が画面の中央に置かれている (枠の中心 ${moon.枠の中心.join(', ')})`);
     await ctxM.close();
 
     /* ------------------------------------------------------------------
@@ -356,6 +366,124 @@ async function run() {
     ok(mf.background_color === '#000000' && mf.theme_color === '#000000',
       `manifest の地色も黒 (背景 ${mf.background_color} / テーマ ${mf.theme_color})`);
     await ctxB.close();
+
+    /* ------------------------------------------------------------------
+       見張り ⑦: 型ごとに、ひと匙と難易度が形から決まっている
+       ------------------------------------------------------------------ */
+    section('型ごとのひと匙と難易度 (見張り⑦)');
+    const ctxS = await browser.newContext({ ...devices['iPhone 13'] });
+    const ps = await ctxS.newPage();
+    ps.on('pageerror', (e) => errors.push('見張り⑦: ' + e.message));
+    await ps.goto(URL);
+    await ps.waitForFunction(() => window.__app);
+    const shapes = await ps.evaluate(() => window.__app.SHAPES.map((s) => ({
+      name: s.name, area: s.area, budget: s.budget, difficulty: s.difficulty, spillMax: s.spillMax,
+    })));
+    ok(shapes.length >= 8, `型が ${shapes.length} 種ある`);
+    ok(new Set(shapes.map((s) => s.name)).size === shapes.length, '型の名前が重複していない');
+    const byArea = [...shapes].sort((a, b) => a.area - b.area);
+    ok(byArea.every((s, i) => i === 0 || s.budget >= byArea[i - 1].budget),
+      '広い型ほどひと匙が多い');
+    ok(shapes.every((s) => s.difficulty >= 1 && s.difficulty <= 5),
+      `難易度が1〜5に収まる (${shapes.map((s) => s.name + s.difficulty).join(' ')})`);
+
+    // お題に入ると、その型のひと匙が使われる
+    await ps.click('#btn-odai');
+    await ps.waitForTimeout(2000);
+    const hud = await ps.evaluate(() => {
+      const i = window.__app.odai.shapeIdx;
+      return {
+        budgetMax: window.__app.odai.budgetMax,
+        shapeBudget: window.__app.SHAPES[i].budget,
+        level: document.getElementById('odai-level').textContent,
+        label: document.getElementById('odai-gauge-label').textContent,
+      };
+    });
+    ok(hud.budgetMax === hud.shapeBudget,
+      `その型のひと匙が使われる (${hud.budgetMax}枚)`);
+    ok(/^◆+◇*$/.test(hud.level) && hud.level.length === 5, `難易度が出る (${hud.level})`);
+    ok(/ひと匙 \d+枚/.test(hud.label), `ひと匙の枚数が出る (${hud.label})`);
+    await ctxS.close();
+
+    /* ------------------------------------------------------------------
+       見張り ⑧: 記録が残り、開き直しても消えない
+       ------------------------------------------------------------------ */
+    section('記録が残る (見張り⑧)');
+    const ctxR = await browser.newContext({ ...devices['iPhone 13'] });
+    const pr = await ctxR.newPage();
+    pr.on('pageerror', (e) => errors.push('見張り⑧: ' + e.message));
+    await pr.goto(URL);
+    await pr.waitForFunction(() => window.__app);
+    ok(await pr.evaluate(() => window.__app.records.rounds === 0), 'はじめは記録が空');
+
+    // 名人を1つ積んで、開き直しても残っているか
+    await pr.evaluate(() => {
+      const C = window.__app.Core;
+      let r = C.emptyRecords();
+      r = C.applyResult(r, window.__app.SHAPES[0].name, { rank: '名人', fill: 0.9, spill: 0.1 });
+      window.__app.setRecords(r);
+    });
+    await pr.reload();
+    await pr.waitForFunction(() => window.__app);
+    const kept = await pr.evaluate(() => ({
+      rounds: window.__app.records.rounds,
+      best: window.__app.records.best[window.__app.SHAPES[0].name],
+      grade: window.__app.Core.grade(window.__app.records, window.__app.SHAPES.length).name,
+    }));
+    ok(kept.rounds === 1 && kept.best && kept.best.rank === '名人',
+      `開き直しても記録が残る (${kept.best && kept.best.rank})`);
+    ok(kept.grade !== '無位', `段位が上がる (${kept.grade})`);
+
+    // 記録の帳が開き、型が全部並ぶ
+    await pr.click('#btn-book');
+    await pr.waitForTimeout(300);
+    const book = await pr.evaluate(() => ({
+      shown: document.getElementById('book').classList.contains('show'),
+      rows: document.querySelectorAll('#book-table tr').length,
+      grade: document.getElementById('book-grade').textContent,
+      はみ出し: (() => {
+        const b = document.getElementById('book').getBoundingClientRect();
+        return b.left < 0 || b.right > innerWidth;
+      })(),
+    }));
+    ok(book.shown && book.rows === shapes.length,
+      `記録の帳に型が全部並ぶ (${book.rows}行 / 段位 ${book.grade})`);
+    ok(!book.はみ出し, '記録の帳が画面からはみ出さない');
+
+    // 壊れた記録が入っていても開ける
+    await pr.evaluate(() => localStorage.setItem('kinpaku-records-v1', '{こわれた'));
+    await pr.reload();
+    await pr.waitForFunction(() => window.__app);
+    ok(await pr.evaluate(() => window.__app.records.rounds === 0),
+      '記録が壊れていても、空から始めて遊べる');
+    await ctxR.close();
+
+    /* ------------------------------------------------------------------
+       見張り ⑨: 蒔いた作品を1枚の絵にできる
+       ------------------------------------------------------------------ */
+    section('作品を写せる (見張り⑨)');
+    const ctxA = await browser.newContext({ ...devices['iPhone 13'] });
+    const pa = await ctxA.newPage();
+    pa.on('pageerror', (e) => errors.push('見張り⑨: ' + e.message));
+    await pa.goto(URL);
+    await pa.waitForFunction(() => window.__app);
+    await pa.mouse.move(195, 300);
+    await pa.mouse.down();
+    await pa.waitForTimeout(400);
+    await pa.mouse.up();
+    await pa.waitForTimeout(1600);
+    const art = await pa.evaluate(() => {
+      const cv = window.__app.composeArtwork();
+      const c = cv.getContext('2d');
+      const d = c.getImageData(0, 0, cv.width, cv.height).data;
+      let gold = 0;
+      for (let i = 0; i < d.length; i += 4 * 7) if (d[i] > 120 && d[i] > d[i + 2] + 30) gold++;
+      return { w: cv.width, h: cv.height, gold, png: cv.toDataURL('image/png').slice(0, 20) };
+    });
+    ok(art.w > 0 && art.h > 0 && art.png.startsWith('data:image/png'),
+      `作品が1枚の絵になる (${art.w}x${art.h})`);
+    ok(art.gold > 100, `写した絵に箔が写っている (${art.gold} 画素)`);
+    await ctxA.close();
 
     // ------------------------------------------------ アイコン
     section('アイコン');
