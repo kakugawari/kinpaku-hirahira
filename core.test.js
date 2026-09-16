@@ -81,28 +81,38 @@ test("受け止めにくい型ほど、こぼれを多めに許す", () => {
   }
 });
 
-test("難易度は受け止めにくさだけで決まり、1〜5 に収まる", () => {
+test("難易度は「許し幅のどこまで使うか」で決まり、1〜5 に収まる", () => {
   for (const s of shapes) {
     assert.ok(s.difficulty >= 1 && s.difficulty <= 5, `${s.name}: 難易度が範囲外`);
-    assert.equal(s.difficulty, C.difficultyOf(s.miss), `${s.name}: 難易度が導出と食い違う`);
+    assert.equal(s.difficulty, C.difficultyOf(s.name, s.spillMax), `${s.name}: 難易度が導出と食い違う`);
+  }
+  /* 余裕を使い切る型ほど難しい、という向きが保たれていること */
+  const 順 = [...shapes].sort((a, b) => (a.reached / a.spillMax) - (b.reached / b.spillMax));
+  for (let i = 1; i < 順.length; i++) {
+    assert.ok(順[i].difficulty >= 順[i - 1].difficulty,
+      `${順[i].name} の方が余裕を使うのに、難易度が低い`);
   }
 });
 
-test("どの型も名人に手が届く(実機で測ったこぼれを下回らない)", () => {
-  /* iPhone 16 Plus (幅430pt) で、上手に蒔いたとき (型の上30px から
-     振り幅0.35でなぞる) に出た、いちばん良いこぼれ(%)。
-     こぼれの許し幅がこれを下回ると、その型では名人を取れなくなる。
+test("測っていない型が来ても、難易度は真ん中で返る", () => {
+  assert.equal(C.difficultyOf("まだ無い型", 0.4), 3);
+});
 
-     ここに入れるのは「最良」であって「最悪」ではない。下手に蒔けば
-     どの型でもこぼれるが、それは型のせいではないため。
-     ★ 型を足す・基準の大きさを変える・撒く手触りを変えたら、実機で
-       測り直すこと。1回では足りない (細い型ほどばらつく) */
-  const 実測 = { 駒: 16, 亀甲: 9, 富士: 44, 扇: 51, 瓢箪: 20, 松: 28, 三日月: 34, 桜: 15 };
+test("どの型も名人に手が届く(実機で測ったこぼれを下回らない)", () => {
+  /* 実測は core.js の REACHED が唯一の出どころ。ここで持ち直すと
+     二重管理になり、片方だけ古くなる */
   for (const s of shapes) {
-    const m = 実測[s.name];
-    assert.ok(m !== undefined, `${s.name}: 実測がない。型を足したら実機で測ること`);
-    assert.ok(s.spillMax * 100 >= m,
-      `${s.name}: 許容 ${Math.round(s.spillMax * 100)}% では、実測 ${m}% に届かず名人が取れない`);
+    assert.ok(s.reached !== undefined,
+      `${s.name}: 実測がない。型を足したら実機で測って core.js の REACHED に入れること`);
+    assert.ok(s.spillMax * 100 >= s.reached,
+      `${s.name}: 許容 ${Math.round(s.spillMax * 100)}% では、実測 ${s.reached}% に届かず名人が取れない`);
+  }
+});
+
+test("実測の表に、余分な型が残っていない", () => {
+  const 型名 = new Set(shapes.map((s) => s.name));
+  for (const name of Object.keys(C.REACHED)) {
+    assert.ok(型名.has(name), `REACHED に、もう無い型 ${name} が残っている`);
   }
 });
 

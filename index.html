@@ -208,6 +208,13 @@
   #book-table td.name { color: rgba(230,205,140,0.95); }
   #book-table td.rank-名人 { color: #f0d878; }
   #book-table td.rank-まだ { color: rgba(200,190,170,0.35); }
+  #book-table tr[data-shape] { cursor: pointer; }
+  #book-table tr[data-shape]:active td { color: #f0d878; }
+  #book-hint {
+    color: rgba(230,210,170,0.4);
+    font-size: 11px; letter-spacing: 0.1em;
+  }
+  #book-buttons { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
 
   /* 写したときの知らせ */
   #toast {
@@ -273,7 +280,11 @@
   <div id="book-grade"></div>
   <div id="book-summary"></div>
   <table id="book-table"></table>
-  <button class="btn" id="btn-book-close">閉じる</button>
+  <div id="book-hint">型を押すと、その型で始まります</div>
+  <div id="book-buttons">
+    <button class="btn" id="btn-book-clear">記録を消す</button>
+    <button class="btn" id="btn-book-close">閉じる</button>
+  </div>
 </div>
 
 <script src="./core.js"></script>
@@ -346,6 +357,10 @@ let currentPalette = "gold";
 const flakes = [];
 const MAX_FLAKES = 600;   /* 同時に舞える箔の上限(端末負荷対策) */
 
+/* 撒いた場所から、どれだけ下に落ちてから貼り付くか。
+   お題の「このへんから蒔く」の帯も、この2つから引くので出どころは一つ */
+const SETTLE_MIN = 60, SETTLE_SPAN = 220;
+
 /* 箔一枚を生成:不定形の四角形として頂点を持たせる
    大きさは蒔絵の配合に倣った3階層:
    ・砂子(すなご) …ごく細かい粉。全体の約8割
@@ -387,7 +402,7 @@ function makeFlake(x, y, big) {
     verts,
     color: colors[(Math.random() * colors.length) | 0],
     glint: PALETTES[currentPalette].glint,
-    settleY: y + 60 + Math.random() * 220,   /* この高さまで落ちたら貼り付く */
+    settleY: y + SETTLE_MIN + Math.random() * SETTLE_SPAN,   /* この高さまで落ちたら貼り付く */
   };
 }
 
@@ -831,6 +846,7 @@ const odai = {
   zoneSet: new Set(),   /* 型の内側にある升目(埋まり判定用) */
   zoneHit: new Set(),   /* 箔が届いた升目 */
   grid: null,           /* 升目の原点と間隔 { ox, oy, step } */
+  bounds: null,         /* 型が画面のどこに来ているか(目安の帯に使う) */
   result: null,         /* 採点結果(表示中はここに入る) */
   settleTimer: 0,       /* 匙が尽きてから採点までの待ち */
 };
@@ -870,6 +886,15 @@ function buildShapeGeometry() {
   const m = new DOMMatrix().translate(cx, cy).scale(s);
   odai.tPath = pathOf(SHAPES[odai.shapeIdx].points, m);
 
+  /* 目安の帯を引くために、型が画面のどこに来たか覚えておく */
+  const pts = SHAPES[odai.shapeIdx].points;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [ux, uy] of pts) {
+    x0 = Math.min(x0, cx + ux * s); x1 = Math.max(x1, cx + ux * s);
+    y0 = Math.min(y0, cy + uy * s); y1 = Math.max(y1, cy + uy * s);
+  }
+  odai.bounds = { left: x0, right: x1, top: y0, bottom: y1 };
+
   /* 型を覆う範囲に升目を敷き、中心が型の内側にある升だけ登録 */
   const step = s * 0.27;
   const ox = cx - s * 1.15, oy = cy - s * 1.15;
@@ -903,10 +928,13 @@ function resetRound() {
   hudFill.style.width = "100%";
 }
 
-/* 新しいお題を引いて開始 */
-function startOdai(newShape) {
+/* お題を開始。
+   pick に数字を渡すとその型、true なら別の型を引く、false なら今の型のまま */
+function startOdai(pick) {
   odai.active = true;
-  if (newShape) {
+  if (typeof pick === "number") {
+    odai.shapeIdx = Math.max(0, Math.min(SHAPES.length - 1, pick | 0));
+  } else if (pick) {
     /* 直前と同じ型は避ける */
     let idx;
     do { idx = (Math.random() * SHAPES.length) | 0; }
@@ -957,14 +985,46 @@ function showBook() {
     const b = records.best[sh.name];
     const rank = b ? b.rank : "まだ";
     const detail = b ? Math.round(b.fill * 100) + "% / " + Math.round(b.spill * 100) + "%" : "—";
-    return "<tr><td class=\"name\">『" + sh.name + "』</td>" +
+    /* 行をそのまま「この型で始める」ボタンにする。
+       段位は「名人を取れた型の数」で決まるのに型を引き直すしかないと、
+       残り1型を引くまで平均7回やり直すことになる */
+    return "<tr data-shape=\"" + sh.index + "\">" +
+           "<td class=\"name\">『" + sh.name + "』</td>" +
            "<td>" + "◆".repeat(sh.difficulty) + "</td>" +
            "<td class=\"rank-" + rank + "\">" + rank + "</td>" +
            "<td>" + detail + "</td></tr>";
   }).join("");
-  document.getElementById("book-table").innerHTML = rows;
+  const table = document.getElementById("book-table");
+  table.innerHTML = rows;
+  hideHint();        /* 帳の裏に案内文が透けるので消す */
+  消す確認 = false;
+  document.getElementById("btn-book-clear").textContent = "記録を消す";
   bookEl.classList.add("show");
 }
+
+/* 帳の行を押したら、その型でお題を始める */
+document.getElementById("book-table").addEventListener("click", (e) => {
+  const tr = e.target.closest("tr[data-shape]");
+  if (!tr) return;
+  bookEl.classList.remove("show");
+  if (odai.active) endOdai();
+  startOdai(Number(tr.dataset.shape));
+});
+
+/* 記録を消す。取り返しがつかないので、二度押しで確かめる */
+let 消す確認 = false;
+document.getElementById("btn-book-clear").addEventListener("click", (e) => {
+  if (!消す確認) {
+    消す確認 = true;
+    e.target.textContent = "もう一度押すと消えます";
+    return;
+  }
+  records = Core.emptyRecords();
+  saveRecords();
+  消す確認 = false;
+  showBook();
+  toast("記録を消しました");
+});
 
 document.getElementById("btn-book").addEventListener("click", showBook);
 document.getElementById("btn-book-close").addEventListener("click", () => {
@@ -1067,6 +1127,58 @@ function drawShapeOutline() {
   ctx.restore();
 }
 
+/* 「このへんから蒔く」の帯
+   ------------------------------------------------------------
+   箔は撒いた場所から SETTLE_MIN 〜 SETTLE_MIN+SETTLE_SPAN だけ下に
+   落ちてから貼り付く。つまり型の真ん中へ置きたければ、平均の落下ぶん
+   上から撒けばよい。計測でも、型の上0〜60pxが最適で、そこから150px
+   上げると名人→見習いまで落ちていた。しかも「うまくいかない→もっと
+   上から」と思うほど悪くなる向きなので、目で見えないと辛い。
+
+   まだ一度も撒いていないラウンドでだけ出して、蒔き始めたら消す */
+function drawSowGuide() {
+  if (!odai.active || odai.result) return;
+  if (odai.budget < odai.budgetMax) return;      /* もう撒き始めている */
+
+  const b = odai.bounds;
+  if (!b) return;
+  const 平均落下 = SETTLE_MIN + SETTLE_SPAN / 2;
+  const y = (b.top + b.bottom) / 2 - 平均落下;    /* 型の真ん中へ届く高さ */
+  const 厚み = SETTLE_SPAN * 0.09;   /* にじみの広がり */
+  const x0 = b.left - 10, x1 = b.right + 10;
+
+  const a = 0.5 + Math.sin(performance.now() / 700) * 0.12;   /* ゆっくり息をする */
+  const cx = (x0 + x1) / 2;
+  ctx.save();
+
+  /* 端がすっと消える一本の線。四角い帯にすると、画面に箱が置かれたように見える */
+  const 横 = ctx.createLinearGradient(x0, 0, x1, 0);
+  横.addColorStop(0,    "rgba(230,200,130,0)");
+  横.addColorStop(0.5,  "rgba(230,200,130," + a.toFixed(3) + ")");
+  横.addColorStop(1,    "rgba(230,200,130,0)");
+  ctx.fillStyle = 横;
+  ctx.fillRect(x0, y - 0.75, x1 - x0, 1.5);
+
+  /* 線のまわりのごく淡いにじみ。
+     四角く塗ると縁が切れて箱に見えるので、楕円でぼかす */
+  ctx.save();
+  ctx.translate(cx, y);
+  ctx.scale((x1 - x0) / 2, 厚み);
+  const にじみ = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+  にじみ.addColorStop(0, "rgba(230,200,130," + (a * 0.22).toFixed(3) + ")");
+  にじみ.addColorStop(1, "rgba(230,200,130,0)");
+  ctx.fillStyle = にじみ;
+  ctx.fillRect(-1, -1, 2, 2);
+  ctx.restore();
+
+  /* 文字は線の下に。上に置くと、お題の掲示と重なる */
+  ctx.fillStyle = "rgba(230,210,170,0.5)";
+  ctx.font = '11px "Hiragino Mincho ProN", "Yu Mincho", serif';
+  ctx.textAlign = "center";
+  ctx.fillText("このあたりから蒔く", cx, y + 厚み + 12);
+  ctx.restore();
+}
+
 /* ============================================================
    色の切り替え
    ============================================================ */
@@ -1156,6 +1268,7 @@ function frame(now) {
 
   /* お題の型の輪郭(積もった箔の上、舞う箔の下) */
   drawShapeOutline();
+  drawSowGuide();
 
   /* お題の採点:匙が尽き、すべての箔が落ち切ったら少し間を置いて判定 */
   if (odai.active && !odai.result && odai.budget <= 0 &&
@@ -1200,7 +1313,7 @@ requestAnimationFrame(frame);
 window.__app = {
   flakes, settled, sliding, sparkles, odai, SHAPES,
   Core,
-  slidePush, PUSH_RADIUS,
+  slidePush, PUSH_RADIUS, SETTLE_MIN, SETTLE_SPAN,
   get records() { return records; },
   setRecords(r) { records = Core.reviveRecords(r); saveRecords(); },
   /* 積もった箔だけを写し取る。きらめきや舞っている箔、型の輪郭が

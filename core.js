@@ -206,12 +206,14 @@
       const pts = normalize(d.build());
       const a = area(pts);
       const miss = missRatio(pts);
+      const spillMax = spillMaxFor(miss);
       return {
         index: i, name: d.name, points: pts,
         area: a, compactness: compactness(pts), concavity: concavity(pts), miss,
         budget: budgetFor(a),
-        spillMax: spillMaxFor(miss),
-        difficulty: difficultyOf(miss),
+        spillMax,
+        reached: REACHED[d.name],
+        difficulty: difficultyOf(d.name, spillMax),
       };
     });
   }
@@ -289,12 +291,33 @@
     return Math.round(Math.max(0.26, Math.min(0.68, miss + 0.14)) * 100) / 100;
   }
 
-  /* 難易度も同じ「受け止めにくさ」から機械的に決める(手で付けない) */
-  function difficultyOf(miss) {
-    if (miss < 0.25) return 1;
-    if (miss < 0.35) return 2;
-    if (miss < 0.45) return 3;
-    if (miss < 0.60) return 4;
+  /* ------------------------------------------------------------
+     実機で測った「上手に蒔いたときのこぼれ」(%)
+     ------------------------------------------------------------
+     iPhone 16 Plus (幅430pt) で、型の上30pxから振り幅0.35でなぞった
+     ときに出た、いちばん良い値。下手に蒔けばどの型でもこぼれるが、
+     それは型の難しさではないので、最良だけを採る。
+
+     ★ 型を足す・基準の大きさを変える・撒く手触りを変えたら、
+       実機で測り直すこと。1回では足りない (ぎりぎりの型ほどばらつく)
+     ------------------------------------------------------------ */
+  const REACHED = {
+    駒: 16, 亀甲: 9, 富士: 44, 扇: 51,
+    瓢箪: 20, 松: 28, 三日月: 34, 桜: 15,
+  };
+
+  /* 難易度は「許し幅のどこまで使ってしまうか」で決める。
+     受け止めにくさだけで決めていたときは、瓢箪が◆1つ(いちばん易しい)
+     なのに名人の余裕がいちばん薄い、という食い違いが出ていた。
+     遊ぶ人が感じるのは、計算上の取りこぼしではなく「線までの余裕」 */
+  function difficultyOf(name, spillMax) {
+    const reached = REACHED[name];
+    if (reached === undefined || !spillMax) return 3;   /* 測っていない型は真ん中 */
+    const 使う割合 = reached / (spillMax * 100);
+    if (使う割合 < 0.30) return 1;
+    if (使う割合 < 0.45) return 2;
+    if (使う割合 < 0.58) return 3;
+    if (使う割合 < 0.70) return 4;
     return 5;
   }
 
@@ -378,7 +401,7 @@
     arcPts, profile, polar, circleHalf,
     area, perimeter, bbox, contains, compactness, normalize, convexHull, concavity,
     SHAPE_DEFS, buildShapes,
-    budgetFor, missRatio, spillMaxFor, difficultyOf, judge, rankValue, RANK_ORDER,
+    budgetFor, missRatio, spillMaxFor, difficultyOf, judge, rankValue, RANK_ORDER, REACHED,
     emptyRecords, applyResult, grade, reviveRecords, GRADES,
   };
 })(typeof module !== "undefined" && module.exports ? module.exports : (this.window || globalThis));

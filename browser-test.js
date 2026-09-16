@@ -626,6 +626,128 @@ async function run() {
       await ctxBar.close();
     }
 
+    /* ------------------------------------------------------------------
+       見張り ⑬: 記録の帳から型を選べる / 記録を消せる
+
+       段位は「名人を取れた型の数」で決まるのに型がランダムだと、
+       残り1型を引くまで何度もやり直すことになる。
+       ------------------------------------------------------------------ */
+    section('帳から型を選び、記録を消せる (見張り⑬)');
+    const ctxK = await browser.newContext({ ...devices[PHONE] });
+    const pk = await ctxK.newPage();
+    pk.on('pageerror', (e) => errors.push('見張り⑬: ' + e.message));
+    await pk.goto(URL);
+    await pk.waitForFunction(() => window.__app);
+
+    await pk.evaluate(() => {
+      const C = window.__app.Core;
+      let r = C.emptyRecords();
+      r = C.applyResult(r, window.__app.SHAPES[0].name, { rank: '名人', fill: 0.9, spill: 0.1 });
+      window.__app.setRecords(r);
+    });
+    await pk.click('#btn-book');
+    await pk.waitForTimeout(300);
+    const 行数 = await pk.evaluate(() => document.querySelectorAll('#book-table tr[data-shape]').length);
+    ok(行数 === shapes.length, `帳の行がすべて選べる (${行数}行)`);
+    ok(await pk.evaluate(() => document.getElementById('hint').classList.contains('hidden')),
+      '帳を開くと、裏に案内文が透けない');
+
+    // 狙った型で始まるか (毎回同じ型を選べることを、2回続けて確かめる)
+    const 選ぶ = shapes.length - 1;
+    const 名前 = await pk.evaluate((i) => window.__app.SHAPES[i].name, 選ぶ);
+    for (let k = 0; k < 2; k++) {
+      await pk.click(`#book-table tr[data-shape="${選ぶ}"]`);
+      await pk.waitForTimeout(2300);
+      const 出た = await pk.evaluate(() => ({
+        idx: window.__app.odai.shapeIdx,
+        name: document.getElementById('odai-name').textContent,
+        budget: window.__app.odai.budgetMax,
+        shapeBudget: window.__app.SHAPES[window.__app.odai.shapeIdx].budget,
+      }));
+      ok(出た.idx === 選ぶ && 出た.name.includes(名前),
+        `${k + 1}回目も狙った型で始まる (${出た.name})`);
+      ok(出た.budget === 出た.shapeBudget, `その型のひと匙が入る (${出た.budget}枚)`);
+      if (k === 0) { await pk.click('#btn-book'); await pk.waitForTimeout(400); }
+    }
+
+    // 記録を消す (二度押しで確かめる作り)
+    await pk.click('#btn-odai');
+    await pk.waitForTimeout(300);
+    await pk.click('#btn-book');
+    await pk.waitForTimeout(300);
+    ok(await pk.evaluate(() => window.__app.records.rounds > 0), '消す前は記録がある');
+    await pk.click('#btn-book-clear');
+    await pk.waitForTimeout(200);
+    const 一度目 = await pk.evaluate(() => ({
+      label: document.getElementById('btn-book-clear').textContent,
+      rounds: window.__app.records.rounds,
+    }));
+    ok(一度目.rounds > 0, '一度押しただけでは消えない');
+    ok(一度目.label.includes('もう一度'), `確かめの表示が出る (${一度目.label})`);
+    await pk.click('#btn-book-clear');
+    await pk.waitForTimeout(400);
+    await pk.reload();
+    await pk.waitForFunction(() => window.__app);
+    ok(await pk.evaluate(() => window.__app.records.rounds === 0),
+      '二度押すと消え、開き直しても戻らない');
+    await ctxK.close();
+
+    /* ------------------------------------------------------------------
+       見張り ⑭: 「このあたりから蒔く」の目安が出て、蒔き始めたら消える
+
+       計測では、型の上0〜60pxが最適で、150px上げると名人→見習いまで
+       落ちていた。しかも「うまくいかない→もっと上から」と思うほど
+       悪くなる向きなので、目で見えないと辛い。
+       ------------------------------------------------------------------ */
+    section('蒔く目安が出る (見張り⑭)');
+    const ctxG = await browser.newContext({ ...devices[PHONE] });
+    const pg = await ctxG.newPage();
+    pg.on('pageerror', (e) => errors.push('見張り⑭: ' + e.message));
+    await pg.goto(URL);
+    await pg.waitForFunction(() => window.__app);
+    await pg.click('#btn-odai');
+    await pg.waitForTimeout(2300);
+
+    const 目安 = await pg.evaluate(() => {
+      const o = window.__app.odai;
+      const 平均落下 = window.__app.SETTLE_MIN + window.__app.SETTLE_SPAN / 2;
+      const y = (o.bounds.top + o.bounds.bottom) / 2 - 平均落下;
+      const cv = document.getElementById('cv');
+      const c = cv.getContext('2d');
+      const s = cv.width / innerWidth;
+      const 明るさ = (px, py) => c.getImageData(Math.round(px * s), Math.round(py * s), 1, 1).data[0];
+      return {
+        y: Math.round(y),
+        線の上: 明るさ(innerWidth / 2, y),
+        離れた所: 明るさ(innerWidth / 2, y - 120),
+        型の上端: Math.round(o.bounds.top),
+        画面内: y > 0 && y < innerHeight,
+      };
+    });
+    ok(目安.画面内, `目安が画面の中に出る (y=${目安.y})`);
+    ok(目安.線の上 > 60 && 目安.離れた所 < 20,
+      `目安の線が光っている (線の上 ${目安.線の上} / 離れた所 ${目安.離れた所})`);
+    ok(目安.y < 目安.型の上端,
+      `目安は型より上にある (目安 ${目安.y} < 型の上端 ${目安.型の上端})`);
+
+    // 蒔き始めたら消える
+    await pg.mouse.move(Math.round(V.width * 0.15), 目安.y);
+    await pg.mouse.down();
+    await pg.waitForTimeout(120);
+    await pg.mouse.up();
+    await pg.waitForTimeout(400);
+    const 消えた = await pg.evaluate(() => {
+      const o = window.__app.odai;
+      const y = (o.bounds.top + o.bounds.bottom) / 2 - (window.__app.SETTLE_MIN + window.__app.SETTLE_SPAN / 2);
+      const cv = document.getElementById('cv');
+      const c = cv.getContext('2d');
+      const s = cv.width / innerWidth;
+      /* 蒔いた箔から離れた右端で見る */
+      return c.getImageData(Math.round((innerWidth - 12) * s), Math.round(y * s), 1, 1).data[0];
+    });
+    ok(消えた < 20, `蒔き始めると目安が消える (明るさ ${消えた})`);
+    await ctxG.close();
+
     // ------------------------------------------------ アイコン
     section('アイコン');
     const apple = await phone.evaluate(() =>
