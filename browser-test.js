@@ -315,6 +315,48 @@ async function run() {
       `型が画面の中央に来ている (中心ずれ ${moon.中心ずれ})`);
     await ctxM.close();
 
+    /* ------------------------------------------------------------------
+       見張り ⑥: 背景が真っ黒で、どこを取っても同じ
+
+       もとは中央が温かい放射グラデーション + 斜めの艶が乗っていた。
+       箔を際立たせるため真っ黒で固定した。画面のあちこちを拾って、
+       すべて #000 かつ全部同色であることを見る。
+       ------------------------------------------------------------------ */
+    section('背景が真っ黒で固定 (見張り⑥)');
+    const ctxB = await browser.newContext({ ...devices['iPhone 13'] });
+    const pb = await ctxB.newPage();
+    pb.on('pageerror', (e) => errors.push('見張り⑥: ' + e.message));
+    await pb.goto(URL);
+    await pb.waitForTimeout(600);
+    const bg = await pb.evaluate(() => {
+      const cv = document.getElementById('cv');
+      const c = cv.getContext('2d');
+      const W = cv.width, H = cv.height;
+      /* 中央・四隅・斜めの艶が乗っていた帯、をまんべんなく拾う */
+      const pts = [
+        [W / 2, H * 0.42], [2, 2], [W - 3, 2], [2, H - 3], [W - 3, H - 3],
+        [W / 2, 2], [W / 4, H / 4], [W * 0.45, H * 0.45], [W * 0.65, H * 0.65],
+      ];
+      const seen = pts.map(([x, y]) => {
+        const d = c.getImageData(Math.round(x), Math.round(y), 1, 1).data;
+        return `${d[0]},${d[1]},${d[2]}`;
+      });
+      return { 色: [...new Set(seen)], 見た点数: pts.length };
+    });
+    ok(bg.色.length === 1,
+      `どこを取っても同じ色 (${bg.見た点数}点で ${bg.色.length}種: ${bg.色.join(' / ')})`);
+    ok(bg.色[0] === '0,0,0', `背景が真っ黒 (${bg.色[0]})`);
+    const themed = await pb.evaluate(() => ({
+      meta: document.querySelector('meta[name="theme-color"]').content.toLowerCase(),
+      body: getComputedStyle(document.body).backgroundColor,
+    }));
+    ok(themed.meta === '#000000', `theme-color も黒 (${themed.meta})`);
+    ok(themed.body === 'rgb(0, 0, 0)', `body の地色も黒 (${themed.body})`);
+    const mf = await (await pb.request.get(URL + 'manifest.json')).json();
+    ok(mf.background_color === '#000000' && mf.theme_color === '#000000',
+      `manifest の地色も黒 (背景 ${mf.background_color} / テーマ ${mf.theme_color})`);
+    await ctxB.close();
+
     // ------------------------------------------------ アイコン
     section('アイコン');
     const apple = await phone.evaluate(() =>
