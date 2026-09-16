@@ -377,7 +377,8 @@ function makeFlake(x, y, big) {
     x, y,
     grade, size,
     vx: (Math.random() - 0.5) * 1.6,        /* 横方向の初速 */
-    vy: -Math.random() * 1.2 - 0.2,          /* 少し舞い上がってから落ちる */
+    vy: -Math.random() * 0.7 - 0.1,          /* ほんの少し舞い上がってから落ちる */
+    pvx: 0, pvy: 0,                          /* 指から弾ける勢い(すぐ減る) */
     rot: Math.random() * Math.PI * 2,        /* 面内回転 */
     vr: (Math.random() - 0.5) * (grade === 2 ? 0.06 : 0.12),  /* 大判はゆったり回る */
     facePhase: Math.random() * Math.PI * 2,  /* 表裏の傾き(きらめき用の位相) */
@@ -554,6 +555,24 @@ function pushTrail(x, y) {
   while (trail.length > 0 && t - trail[0].t > 100) trail.shift();
 }
 
+/* ============================================================
+   撒いたときの手触り
+   ------------------------------------------------------------
+   もとは指のところに固まりが湧いて、0.5秒ほどその場に浮いてから
+   ゆっくり落ちていた。1フレームずつ測ると、最初の500msで
+   いちばん下の箔が 11px しか動いていなかった。
+   ・指から外へ散らす勢いを足して、触った瞬間に広がるようにする
+   ・浮いている時間を縮める(上向きの初速を弱め、重力を強める)
+   ・落ちる速さの上限は変えない。ひらひらはこのアプリの味なので残す
+   ============================================================ */
+const GRAVITY = 3.4;        /* 重力。2.2 だと上向きの初速を消すのに 0.6 秒かかっていた */
+const SPREAD_X = 32;        /* 生まれる位置の散らばり(横) */
+const SPREAD_Y = 22;        /* 同(縦) */
+const POP = 4.0;            /* 指から外へ弾ける勢い(1フレームあたりpx) */
+const POP_DECAY = 0.88;     /* 弾ける勢いの減り方。ふつうの空気抵抗(0.985)だと
+                               勢いが残り続け、2秒で 352px も広がってしまった。
+                               0.88 なら 0.3 秒ほどで収まり、散り幅は 12〜42px */
+
 function emitBurst(x, y, count, big) {
   for (let i = 0; i < count; i++) {
     /* お題モード中は匙の残りが尽きたら撒けない */
@@ -565,9 +584,19 @@ function emitBurst(x, y, count, big) {
       return;   /* 結果表示中は撒けない */
     }
     if (flakes.length >= MAX_FLAKES) flakes.shift();  /* 上限超過時は古い箔を破棄 */
-    const ox = (Math.random() - 0.5) * 26;
-    const oy = (Math.random() - 0.5) * 18;
-    flakes.push(makeFlake(x + ox, y + oy, big));
+    const ox = (Math.random() - 0.5) * SPREAD_X;
+    const oy = (Math.random() - 0.5) * SPREAD_Y;
+    const f = makeFlake(x + ox, y + oy, big);
+    /* 指を中心に、外へ向かってぱっと散る。
+       軽い砂子ほど遠くまで飛び、大判はあまり動かない */
+    const d = Math.hypot(ox, oy) || 1;
+    const 軽さ = f.grade === 0 ? 1.15 : (f.grade === 1 ? 0.85 : 0.55);
+    const push = POP * (0.35 + Math.random() * 0.9) * 軽さ;
+    /* 漂う速さとは別に持たせる。すぐ減るので、散ったあとは
+       もとどおりのひらひらに戻る */
+    f.pvx = (ox / d) * push;
+    f.pvy = (oy / d) * push * 0.5;          /* 縦は控えめ。上へ飛びすぎない */
+    flakes.push(f);
   }
 }
 
@@ -1122,12 +1151,13 @@ function frame(now) {
   /* --- 舞っている箔の更新 --- */
   for (let i = flakes.length - 1; i >= 0; i--) {
     const f = flakes[i];
-    f.vy += 2.2 * dt;                        /* 弱い重力 */
+    f.vy += GRAVITY * dt;
     f.vy = Math.min(f.vy, 1.6);              /* 終端速度(ひらひら感を保つ) */
     f.swayPhase += (1.5 + f.swayAmp) * dt * 2.2;
-    f.x += f.vx + Math.sin(f.swayPhase) * f.swayAmp;
-    f.y += f.vy;
+    f.x += f.vx + f.pvx + Math.sin(f.swayPhase) * f.swayAmp;
+    f.y += f.vy + f.pvy;
     f.vx *= 0.985;                           /* 空気抵抗 */
+    f.pvx *= POP_DECAY; f.pvy *= POP_DECAY;  /* 弾けた勢いはすぐ収まる */
     f.rot += f.vr;
     f.facePhase += f.faceRate;
 
