@@ -349,24 +349,22 @@ async function run() {
     pb.on('pageerror', (e) => errors.push('見張り⑥: ' + e.message));
     await pb.goto(URL);
     await pb.waitForTimeout(600);
+    /* 何点か抜き取る見方だと、漂うものがあったときに
+       「たまたま当たらなかった」で通ってしまう。画素を全部見る */
     const bg = await pb.evaluate(() => {
       const cv = document.getElementById('cv');
       const c = cv.getContext('2d');
-      const W = cv.width, H = cv.height;
-      /* 中央・四隅・斜めの艶が乗っていた帯、をまんべんなく拾う */
-      const pts = [
-        [W / 2, H * 0.42], [2, 2], [W - 3, 2], [2, H - 3], [W - 3, H - 3],
-        [W / 2, 2], [W / 4, H / 4], [W * 0.45, H * 0.45], [W * 0.65, H * 0.65],
-      ];
-      const seen = pts.map(([x, y]) => {
-        const d = c.getImageData(Math.round(x), Math.round(y), 1, 1).data;
-        return `${d[0]},${d[1]},${d[2]}`;
-      });
-      return { 色: [...new Set(seen)], 見た点数: pts.length };
+      const d = c.getImageData(0, 0, cv.width, cv.height).data;
+      let 黒でない = 0, いちばん明るい = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        const m = Math.max(d[i], d[i + 1], d[i + 2]);
+        if (m > 0) 黒でない++;
+        if (m > いちばん明るい) いちばん明るい = m;
+      }
+      return { 黒でない, 全画素: d.length / 4, いちばん明るい };
     });
-    ok(bg.色.length === 1,
-      `どこを取っても同じ色 (${bg.見た点数}点で ${bg.色.length}種: ${bg.色.join(' / ')})`);
-    ok(bg.色[0] === '0,0,0', `背景が真っ黒 (${bg.色[0]})`);
+    ok(bg.黒でない === 0,
+      `触れる前の画面が、1画素残らず真っ黒 (黒でない画素 ${bg.黒でない} / ${bg.全画素}、いちばん明るい値 ${bg.いちばん明るい})`);
     const themed = await pb.evaluate(() => ({
       meta: document.querySelector('meta[name="theme-color"]').content.toLowerCase(),
       body: getComputedStyle(document.body).backgroundColor,

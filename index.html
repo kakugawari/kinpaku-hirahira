@@ -339,7 +339,7 @@ function resize() {
   baseCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
   if (old) sedCtx.drawImage(old, 0, 0, oldW / DPR, oldH / DPR); /* 論理座標系で貼り直し */
 }
-window.addEventListener("resize", () => { resize(); buildBokeh(); });
+window.addEventListener("resize", resize);
 resize();
 
 /* ============================================================
@@ -1273,122 +1273,6 @@ function drawBackground(c) {
 }
 
 /* ============================================================
-   ボケの箔(奥と手前をゆっくり漂う、ピントの外れた金箔)
-   ------------------------------------------------------------
-   遊びには関わらない飾り。採点にも当たり判定にも入らないので、
-   型の難易度は動かない。奥に小さく暗いもの、手前に大きく明るい
-   ものを置くと、画面に前後の深さが出る。
-
-   ぼかしは毎フレームかけると重いので、作るときに一度だけ焼いた
-   絵を、回して大きさを変えながら描く。
-   ============================================================ */
-const BOKEH_SPRITES = [];     /* ぼかし済みの絵(粗さ違いで数枚) */
-const bokehFlakes = [];
-
-
-/* ぼかした箔の絵を1枚作る */
-function makeBokehSprite(size, blur, tint) {
-  const c = document.createElement("canvas");
-  const pad = blur * 3;
-  c.width = c.height = Math.ceil((size + pad) * 2);
-  const g = c.getContext("2d");
-  g.translate(c.width / 2, c.height / 2);
-  g.filter = "blur(" + blur + "px)";
-  /* 箔らしい角ばった不定形 */
-  g.beginPath();
-  for (let i = 0; i < 5; i++) {
-    const a = (Math.PI * 2 / 5) * i + (Math.random() - 0.5) * 0.8;
-    const r = size * (0.55 + Math.random() * 0.6);
-    if (i === 0) g.moveTo(Math.cos(a) * r, Math.sin(a) * r);
-    else g.lineTo(Math.cos(a) * r, Math.sin(a) * r);
-  }
-  g.closePath();
-  const grad = g.createLinearGradient(-size, -size, size, size);
-  grad.addColorStop(0, tint[0]);
-  grad.addColorStop(0.5, tint[1]);
-  grad.addColorStop(1, tint[2]);
-  g.fillStyle = grad;
-  g.fill();
-  return c;
-}
-
-function buildBokeh() {
-  BOKEH_SPRITES.length = 0;
-  const 金 = [["#6b4e18", "#c9a24b", "#7a5c22"], ["#8a6a22", "#f0d878", "#9c7528"],
-              ["#5c4415", "#b08b3c", "#6b5019"]];
-  for (const tint of 金) {
-    BOKEH_SPRITES.push(makeBokehSprite(24, 6, tint));
-    BOKEH_SPRITES.push(makeBokehSprite(16, 3.5, tint));
-    BOKEH_SPRITES.push(makeBokehSprite(11, 2, tint));
-  }
-
-  bokehFlakes.length = 0;
-  /* 奥(小さく暗い)と手前(大きく明るい)を混ぜる。
-     大きく濃くすると「巨大な染み」に見えるので、数を増やして薄く散らす */
-  const n = 16;
-  for (let i = 0; i < n; i++) {
-    const 手前 = i >= n * 0.62;
-    bokehFlakes.push(newBokeh(手前, true));
-  }
-}
-
-function newBokeh(手前, 初回) {
-  return {
-    sprite: BOKEH_SPRITES[(Math.random() * BOKEH_SPRITES.length) | 0],
-    手前,
-    x: Math.random() * W,
-    y: 初回 ? Math.random() * H : -60 - Math.random() * 80,
-    /* 落下速度に個体差を持たせる。手前ほど速く見える(近いので) */
-    speed: (手前 ? 0.26 : 0.12) + Math.random() * (手前 ? 0.30 : 0.14),
-    scale: (手前 ? 0.85 : 0.35) + Math.random() * (手前 ? 0.75 : 0.35),
-    alpha: (手前 ? 0.10 : 0.05) + Math.random() * (手前 ? 0.13 : 0.07),
-    rotation: Math.random() * Math.PI * 2,
-    rotationSpeed: (Math.random() - 0.5) * 0.006,
-    swaySpeed: 0.0006 + Math.random() * 0.0011,
-    swayAmp: 0.18 + Math.random() * 0.45,
-    phase: Math.random() * Math.PI * 2,
-    wind: 0,
-  };
-}
-
-function updateBokeh(dt, now) {
-  if (reduceMotion) return;
-  for (let i = bokehFlakes.length - 1; i >= 0; i--) {
-    const b = bokehFlakes[i];
-    b.y += b.speed;
-    /* ゆっくり左右に揺れる */
-    b.x += Math.sin(now * b.swaySpeed + b.phase) * b.swayAmp;
-    /* ときどき、ゆるやかに風が吹く */
-    b.wind += (Math.random() - 0.5) * 0.02;
-    b.wind *= 0.995;
-    b.x += b.wind;
-    b.rotation += b.rotationSpeed;
-    if (b.y > H + 90 || b.x < -120 || b.x > W + 120) {
-      bokehFlakes[i] = newBokeh(b.手前, false);
-    }
-  }
-}
-
-buildBokeh();   /* 起動時に一度。resize() より後に置くこと(定数の初期化前に呼べない) */
-
-function drawBokeh(手前) {
-  if (reduceMotion || BOKEH_SPRITES.length === 0) return;
-  ctx.save();
-  /* 黒地なので、ふつうの重ね方でも金は沈まない。
-     lighter は読み書きが要るぶん高くつくので使わない */
-  for (const b of bokehFlakes) {
-    if (b.手前 !== 手前) continue;
-    ctx.globalAlpha = b.alpha;
-    ctx.translate(b.x, b.y);
-    ctx.rotate(b.rotation);
-    ctx.scale(b.scale, b.scale);
-    ctx.drawImage(b.sprite, -b.sprite.width / 2, -b.sprite.height / 2);
-    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  }
-  ctx.restore();
-}
-
-/* ============================================================
    メインループ
    ============================================================ */
 let lastT = performance.now();
@@ -1432,8 +1316,6 @@ function frame(now) {
 
   /* --- 描画 --- */
   drawBackground(ctx);
-  updateBokeh(dt, now);
-  drawBokeh(false);          /* 奥のボケは、積もった箔より下に */
 
   /* 洗い流しアニメーション:退避した層が下へ流れながら薄れる */
   if (washing) {
@@ -1486,7 +1368,6 @@ function frame(now) {
   }
 
   drawSparkles();
-  drawBokeh(true);           /* 手前のボケは、すべての上に */
 
   requestAnimationFrame(frame);
 }
