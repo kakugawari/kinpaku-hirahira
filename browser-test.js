@@ -321,14 +321,17 @@ async function run() {
         if (y < by0) by0 = y; if (y > by1) by1 = y;
       }
       return { 名前: names[idx], 左端, 右端, 内側の幅: +内側の幅.toFixed(2),
+               へこみ: +window.__app.Core.concavity(window.__app.SHAPES[idx].points).toFixed(3),
                枠の中心: [+((bx0 + bx1) / 2).toFixed(3), +((by0 + by1) / 2).toFixed(3)] };
     });
     // 三日月なら、中央の高さの「肉」は外円の直径よりずっと細い。
     // レンズ形(直す前)だと -0.3〜1.0 = 1.3 になる。
-    ok(moon.内側の幅 < 0.8,
-      `中央の高さで型が細い = 欠けている (${moon.名前}: 肉の厚み ${moon.内側の幅} / 左端 ${moon.左端} 右端 ${moon.右端})`);
-    ok(moon.右端 - moon.左端 < 0.8,
-      `欠けが外円の内側に入っている (左端 ${moon.左端} 右端 ${moon.右端})`);
+    /* 内弧を逆向きに描くとレンズ形になり、へこみが消える。
+       細さで見ると月を太らせただけで落ちるので、へこみで見る */
+    ok(moon.へこみ < 0.92,
+      `${moon.名前}に欠けがある (へこみ ${moon.へこみ} / 肉の厚み ${moon.内側の幅})`);
+    ok(moon.左端 < 0 && moon.右端 > 0,
+      `型が画面のまんなかをまたいでいる (左端 ${moon.左端} 右端 ${moon.右端})`);
     ok(Math.abs(moon.枠の中心[0]) < 0.01 && Math.abs(moon.枠の中心[1]) < 0.01,
       `型が画面の中央に置かれている (枠の中心 ${moon.枠の中心.join(', ')})`);
     await ctxM.close();

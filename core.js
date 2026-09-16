@@ -100,6 +100,24 @@
     return inside;
   }
 
+  /* 凸包(輪ゴムをかけた形)。へこみがあるか調べるのに使う */
+  function convexHull(pts) {
+    const p = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const cross = (o, a, b) => (a[0]-o[0])*(b[1]-o[1]) - (a[1]-o[1])*(b[0]-o[0]);
+    const lo = [];
+    for (const q of p) { while (lo.length > 1 && cross(lo[lo.length-2], lo[lo.length-1], q) <= 0) lo.pop(); lo.push(q); }
+    const hi = [];
+    for (const q of [...p].reverse()) { while (hi.length > 1 && cross(hi[hi.length-2], hi[hi.length-1], q) <= 0) hi.pop(); hi.push(q); }
+    return lo.slice(0, -1).concat(hi.slice(0, -1));
+  }
+
+  /* へこみ具合。1 = でっぱりだけ(凸)、小さいほど深く欠けている。
+     三日月が裏返ってレンズ形になる類の間違いは、これで捕まる */
+  function concavity(pts) {
+    const h = area(convexHull(pts));
+    return h > 0 ? area(pts) / h : 1;
+  }
+
   /* まるっこさ。円=1、細い/入り組んだ形ほど小さい */
   function compactness(pts) {
     const p = perimeter(pts);
@@ -167,7 +185,10 @@
       name: "三日月",
       /* 外弧から内弧を削る。内弧は外円の内側 (x=+0.3) を通す */
       build: () => {
-        const cx = -1.5, r2 = Math.hypot(cx, 1);
+        /* 内側の円の中心を遠くに置くほど、欠けが浅く=月が太くなる。
+           -1.5 だと肉の厚みが 0.70 しかなく、撒いた箔の散らばり (片側
+           0.30) に対して細すぎて、名人がほとんど取れない型になっていた */
+        const cx = -2.4, r2 = Math.hypot(cx, 1);
         return arcPts(0, 0, 1, -Math.PI / 2, Math.PI / 2, false, N)
           .concat(arcPts(cx, 0, r2, Math.atan2(1, -cx), Math.atan2(-1, -cx), true, N));
       },
@@ -187,7 +208,7 @@
       const miss = missRatio(pts);
       return {
         index: i, name: d.name, points: pts,
-        area: a, compactness: compactness(pts), miss,
+        area: a, compactness: compactness(pts), concavity: concavity(pts), miss,
         budget: budgetFor(a),
         spillMax: spillMaxFor(miss),
         difficulty: difficultyOf(miss),
@@ -230,17 +251,29 @@
   const FALL_MIN_U = 60 / REF_SHAPE_SIZE;    /* 型の座標に直した落下距離 */
   const FALL_MAX_U = 280 / REF_SHAPE_SIZE;
 
+  /* 横の散らばり。撒いた箔は生まれる位置が散り (±16px)、さらに指から
+     外へ弾ける (12〜42px)。合わせて片側およそ 42px = 型の座標で 0.30。
+     これを入れないと、細い型の取りこぼしを大幅に見誤る。
+     実際、入れずに決めた許し幅では三日月だけ名人に届かなかった */
+  const SCATTER_U = 42 / REF_SHAPE_SIZE;
+
   function missRatio(pts) {
     const b = bbox(pts);
     const y0 = b.y0;                /* 型の上端から落とす */
-    const NX = 160, ND = 160;
+    const NX = 120, ND = 120, NS = 9;
     let hit = 0, n = 0;
     for (let i = 0; i < NX; i++) {
       const x = b.x0 + b.w * ((i + 0.5) / NX);
       for (let j = 0; j < ND; j++) {
         const d = FALL_MIN_U + (FALL_MAX_U - FALL_MIN_U) * ((j + 0.5) / ND);
-        n++;
-        if (contains(pts, x, y0 + d)) hit++;
+        /* 横のぶれを、真ん中が厚い山なりの重みで見込む */
+        for (let k = 0; k < NS; k++) {
+          const u = (k + 0.5) / NS * 2 - 1;              /* -1..1 */
+          const w = 1 - Math.abs(u);                      /* 山なりの重み */
+          const sx = x + u * SCATTER_U;
+          n += w;
+          if (contains(pts, sx, y0 + d)) hit += w;
+        }
       }
     }
     return 1 - hit / n;
@@ -253,7 +286,7 @@
      余裕がいちばん薄いのは三日月で +8ポイント。
      ★ 撒き方の手触りを変えたら、実機で測り直してこの係数を引き直すこと */
   function spillMaxFor(miss) {
-    return Math.round(Math.max(0.26, Math.min(0.68, miss + 0.10)) * 100) / 100;
+    return Math.round(Math.max(0.26, Math.min(0.68, miss + 0.14)) * 100) / 100;
   }
 
   /* 難易度も同じ「受け止めにくさ」から機械的に決める(手で付けない) */
@@ -343,7 +376,7 @@
 
   root.KinpakuCore = {
     arcPts, profile, polar, circleHalf,
-    area, perimeter, bbox, contains, compactness, normalize,
+    area, perimeter, bbox, contains, compactness, normalize, convexHull, concavity,
     SHAPE_DEFS, buildShapes,
     budgetFor, missRatio, spillMaxFor, difficultyOf, judge, rankValue, RANK_ORDER,
     emptyRecords, applyResult, grade, reviveRecords, GRADES,
