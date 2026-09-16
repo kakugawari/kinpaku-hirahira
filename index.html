@@ -34,8 +34,11 @@
        時計やダイナミックアイランドの裏に入る (iPhone 16 Plus は上 59pt) */
     position: fixed; top: calc(14px + env(safe-area-inset-top, 0px)); left: 18px;
     color: rgba(201,162,75,0.85);
-    font-size: 15px; letter-spacing: 0.35em;
-    writing-mode: vertical-rl;      /* 縦書きで和の趣を */
+    /* 縦書き。writing-mode で組むと字の送りがフォント任せになり、
+       漢字の送りを 0 で返す環境では「金」と「箔」が重なって刷られる。
+       1字ずつ箱に入れて積み、送りは line-height で決める */
+    display: flex; flex-direction: column; align-items: center;
+    font-size: 15px; line-height: 1.35; letter-spacing: 0;
     pointer-events: none;
     text-shadow: 0 0 12px rgba(201,162,75,0.25);
   }
@@ -280,7 +283,7 @@
 <body>
 
 <canvas id="cv"></canvas>
-<div id="title">金箔ひらひら</div>
+<div id="title"><span>金</span><span>箔</span><span>ひ</span><span>ら</span><span>ひ</span><span>ら</span></div>
 <div id="hint">触れて蒔き なでてずらす</div>
 
 <div id="bar">
@@ -1200,7 +1203,7 @@ function drawShapeOutline() {
   if (!odai.active || !odai.outline) return;
   const o = odai.outline;
   const 巡り = performance.now() / 26;        /* 粒がゆっくり周をめぐる */
-  const 間隔 = 2.0;
+  const 間隔 = 1.8;
   const n = Math.min(1100, Math.floor(o.周 / 間隔));
 
   /* 粒を1つずつ塗ると、1フレームに千回近く塗ることになる。
@@ -1217,17 +1220,17 @@ function drawShapeOutline() {
     /* 粒ごとの明るさを、周に沿ってうねらせる。
        周期がひとつだと等間隔に光って真珠の連なりに見えるので、
        噛み合わない2つの波を掛け合わせて、むらのある散らばりにする */
-    const w = 0.25 + 0.75 * Math.abs(Math.sin(d * 0.061) * Math.sin(d * 0.0173 + 1.3));
+    const w = 0.34 + 0.66 * Math.abs(Math.sin(d * 0.061) * Math.sin(d * 0.0173 + 1.3));
     const ずれ = Math.sin(d * 0.37 + i * 2.1) * 1.7;   /* 線から少しだけ外す */
-    const r = 0.32 + w * 0.62;
+    const r = 0.46 + w * 0.86;
     const x = px + ずれ, y = py + ずれ * 0.6;
     const k = Math.min(段数 - 1, (w * 段数) | 0);
     道[k].moveTo(x + r, y);
     道[k].arc(x, y, r, 0, Math.PI * 2);
     /* ときどき、粒がひとつ強く光る */
     if (w > 0.985) {
-      強い.moveTo(x + r * 2.4, y);
-      強い.arc(x, y, r * 2.4, 0, Math.PI * 2);
+      強い.moveTo(x + r * 2.6, y);
+      強い.arc(x, y, r * 2.6, 0, Math.PI * 2);
       強いのがある = true;
     }
   }
@@ -1236,66 +1239,14 @@ function drawShapeOutline() {
   ctx.globalCompositeOperation = "lighter";
   ctx.fillStyle = "#e8c15a";
   for (let k = 0; k < 段数; k++) {
-    ctx.globalAlpha = 0.08 + ((k + 0.5) / 段数) * 0.30;
+    ctx.globalAlpha = 0.17 + ((k + 0.5) / 段数) * 0.55;
     ctx.fill(道[k]);
   }
   if (強いのがある) {
-    ctx.globalAlpha = 0.4;
+    ctx.globalAlpha = 0.55;
     ctx.fillStyle = "#fff6d5";
     ctx.fill(強い);
   }
-  ctx.restore();
-}
-
-/* 「このへんから蒔く」の帯
-   ------------------------------------------------------------
-   箔は撒いた場所から SETTLE_MIN 〜 SETTLE_MIN+SETTLE_SPAN だけ下に
-   落ちてから貼り付く。つまり型の真ん中へ置きたければ、平均の落下ぶん
-   上から撒けばよい。計測でも、型の上0〜60pxが最適で、そこから150px
-   上げると名人→見習いまで落ちていた。しかも「うまくいかない→もっと
-   上から」と思うほど悪くなる向きなので、目で見えないと辛い。
-
-   まだ一度も撒いていないラウンドでだけ出して、蒔き始めたら消す */
-function drawSowGuide() {
-  if (!odai.active || odai.result) return;
-  if (odai.budget < odai.budgetMax) return;      /* もう撒き始めている */
-
-  const b = odai.bounds;
-  if (!b) return;
-  const 平均落下 = SETTLE_MIN + SETTLE_SPAN / 2;
-  const y = (b.top + b.bottom) / 2 - 平均落下;    /* 型の真ん中へ届く高さ */
-  const 厚み = SETTLE_SPAN * 0.09;   /* にじみの広がり */
-  const x0 = b.left - 10, x1 = b.right + 10;
-
-  const a = 0.5 + Math.sin(performance.now() / 700) * 0.12;   /* ゆっくり息をする */
-  const cx = (x0 + x1) / 2;
-  ctx.save();
-
-  /* 端がすっと消える一本の線。四角い帯にすると、画面に箱が置かれたように見える */
-  const 横 = ctx.createLinearGradient(x0, 0, x1, 0);
-  横.addColorStop(0,    "rgba(230,200,130,0)");
-  横.addColorStop(0.5,  "rgba(230,200,130," + a.toFixed(3) + ")");
-  横.addColorStop(1,    "rgba(230,200,130,0)");
-  ctx.fillStyle = 横;
-  ctx.fillRect(x0, y - 0.75, x1 - x0, 1.5);
-
-  /* 線のまわりのごく淡いにじみ。
-     四角く塗ると縁が切れて箱に見えるので、楕円でぼかす */
-  ctx.save();
-  ctx.translate(cx, y);
-  ctx.scale((x1 - x0) / 2, 厚み);
-  const にじみ = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
-  にじみ.addColorStop(0, "rgba(230,200,130," + (a * 0.22).toFixed(3) + ")");
-  にじみ.addColorStop(1, "rgba(230,200,130,0)");
-  ctx.fillStyle = にじみ;
-  ctx.fillRect(-1, -1, 2, 2);
-  ctx.restore();
-
-  /* 文字は線の下に。上に置くと、お題の掲示と重なる */
-  ctx.fillStyle = "rgba(230,210,170,0.5)";
-  ctx.font = '11px "Hiragino Mincho ProN", "Yu Mincho", serif';
-  ctx.textAlign = "center";
-  ctx.fillText("このあたりから蒔く", cx, y + 厚み + 12);
   ctx.restore();
 }
 
@@ -1542,7 +1493,6 @@ function frame(now) {
 
   /* お題の型の輪郭(積もった箔の上、舞う箔の下) */
   drawShapeOutline();
-  drawSowGuide();
 
   /* お題の採点:匙が尽き、すべての箔が落ち切ったら少し間を置いて判定 */
   if (odai.active && !odai.result && odai.budget <= 0 &&

@@ -141,6 +141,27 @@ async function run() {
     const size = await phone.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
     ok(size.w > 0 && size.h > 0, `画面が立ち上がる (${size.w}x${size.h})`);
 
+    /* 隅の題字も1字ずつ積んである。writing-mode に任せると、字の送りを
+       0 で返すフォントの環境で「金」と「箔」が重なって刷られる */
+    const 隅の題字 = await phone.evaluate(() => {
+      const el = document.getElementById('title');
+      const boxes = [...el.children].map((sp) => {
+        const b = sp.getBoundingClientRect();
+        return { 字: sp.textContent, top: b.top, 高さ: b.height };
+      });
+      const 送り = [];
+      for (let i = 1; i < boxes.length; i++) 送り.push(boxes[i].top - boxes[i - 1].top);
+      return {
+        読み: boxes.map((b) => b.字).join(''),
+        字数: boxes.length,
+        重なり: 送り.filter((d, i) => d < boxes[i].高さ * 0.8).length,
+        最小: Math.min(...送り), 最大: Math.max(...送り),
+      };
+    });
+    ok(隅の題字.読み === '金箔ひらひら' && 隅の題字.字数 === 6 && 隅の題字.重なり === 0 &&
+       隅の題字.最大 - 隅の題字.最小 < 2,
+      `隅の題字の6字が重ならずに並ぶ (送り ${隅の題字.最小.toFixed(0)}〜${隅の題字.最大.toFixed(0)}px)`);
+
     // ------------------------------------------------ 蒔ける
     section('金箔を蒔く');
     await phone.mouse.move(size.w / 2, size.h * 0.35);
@@ -716,79 +737,6 @@ async function run() {
       '二度押すと消え、開き直しても戻らない');
     await ctxK.close();
 
-    /* ------------------------------------------------------------------
-       見張り ⑭: 「このあたりから蒔く」の目安が出て、蒔き始めたら消える
-
-       計測では、型の上0〜60pxが最適で、150px上げると名人→見習いまで
-       落ちていた。しかも「うまくいかない→もっと上から」と思うほど
-       悪くなる向きなので、目で見えないと辛い。
-       ------------------------------------------------------------------ */
-    section('蒔く目安が出る (見張り⑭)');
-    const ctxG = await browser.newContext({ ...DEVICE });
-    const pg = await ctxG.newPage();
-    pg.on('pageerror', (e) => errors.push('見張り⑭: ' + e.message));
-    await 開く(pg);
-    await pg.waitForFunction(() => window.__app);
-    await pg.click('#btn-odai');
-    await pg.waitForTimeout(2300);
-
-    /* ボケの箔が漂うようになったので、1点だけ見ると当たり外れが出る。
-       線のある高さと、離れた高さを、横一列ならして比べる */
-    await pg.addScriptTag({ content: `
-      /* px0/px1 で横の範囲を絞れる。指で蒔いた所を混ぜて測ると、
-         積もった箔の明るさで「線が消えた」判定が揺れる */
-      window.__横ならし = (py, px0 = 0, px1 = innerWidth) => {
-        const cv = document.getElementById('cv');
-        const c = cv.getContext('2d');
-        const s = cv.width / innerWidth;
-        const y = Math.round(py * s);
-        const x = Math.round(px0 * s);
-        const w = Math.max(1, Math.round((px1 - px0) * s));
-        const d = c.getImageData(x, y, w, 1).data;
-        let 和 = 0, n = 0;
-        for (let i = 0; i < d.length; i += 4) { 和 += d[i]; n++; }
-        return 和 / n;
-      };
-    ` });
-    /* 指は左 (幅の15%) で蒔くので、測るのは右半分。
-       蒔く前と後で同じ所を測らないと、比べたことにならない */
-    const 右半分 = [V.width * 0.55, V.width];
-    const 目安 = await pg.evaluate(([x0, x1]) => {
-      const o = window.__app.odai;
-      const 平均落下 = window.__app.SETTLE_MIN + window.__app.SETTLE_SPAN / 2;
-      const y = (o.bounds.top + o.bounds.bottom) / 2 - 平均落下;
-      return {
-        y: Math.round(y),
-        線の高さ: +window.__横ならし(y, x0, x1).toFixed(1),
-        離れた高さ: +window.__横ならし(y - 120, x0, x1).toFixed(1),
-        型の上端: Math.round(o.bounds.top),
-        画面内: y > 0 && y < innerHeight,
-      };
-    }, 右半分);
-    ok(目安.画面内, `目安が画面の中に出る (y=${目安.y})`);
-    ok(目安.線の高さ > 目安.離れた高さ + 8,
-      `目安の線が光っている (線の高さ ${目安.線の高さ} / 離れた高さ ${目安.離れた高さ})`);
-    ok(目安.y < 目安.型の上端,
-      `目安は型より上にある (目安 ${目安.y} < 型の上端 ${目安.型の上端})`);
-
-    // 蒔き始めたら消える
-    await pg.mouse.move(Math.round(V.width * 0.15), 目安.y);
-    await pg.mouse.down();
-    await pg.waitForTimeout(120);
-    await pg.mouse.up();
-    await pg.waitForTimeout(400);
-    const 消えた = await pg.evaluate(([x0, x1]) => {
-      const o = window.__app.odai;
-      const y = (o.bounds.top + o.bounds.bottom) / 2 - (window.__app.SETTLE_MIN + window.__app.SETTLE_SPAN / 2);
-      return {
-        線の高さ: +window.__横ならし(y, x0, x1).toFixed(1),
-        離れた高さ: +window.__横ならし(y - 120, x0, x1).toFixed(1),
-      };
-    }, 右半分);
-    /* 線が消えていれば、線のあった高さと離れた高さの差がほとんど無くなる */
-    ok(消えた.線の高さ < 消えた.離れた高さ + 8,
-      `蒔き始めると目安が消える (線の高さ ${消えた.線の高さ} / 離れた高さ ${消えた.離れた高さ})`);
-    await ctxG.close();
 
     /* ------------------------------------------------------------------
        見張り ⑮: タイトル画面で金箔がひらひら落ちてきて、触れると遊べる
@@ -912,6 +860,57 @@ async function run() {
     ok(蒔けた > 200, `閉じたあとは蒔ける (${蒔けた} 画素)`);
     await ctxT.close();
 
+    /* ------------------------------------------------------------------
+       見張り ⑯: 型の輪郭が、見える明るさで出ている
+
+       実機で「少し暗くてわかりにくい」と言われて明るくした所。
+       粒がめぐって1コマごとに揺れるので、何コマか測ってならす。
+       「このあたりから蒔く」の帯を外したぶん、型の縁だけが頼りになった。
+       ------------------------------------------------------------------ */
+    section('型の輪郭が見える (見張り⑯)');
+    const ctxL = await browser.newContext({ ...DEVICE });
+    const pl = await ctxL.newPage();
+    pl.on('pageerror', (e) => errors.push('見張り⑯: ' + e.message));
+    await 開く(pl);
+    await pl.bringToFront();
+    await pl.click('#btn-odai');
+    await pl.waitForTimeout(2400);
+
+    const 測る = () => pl.evaluate(() => {
+      const cv = document.getElementById('cv');
+      const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+      let 数 = 0, 和 = 0, 最大 = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        const v = d[i];
+        if (v > 8) { 数++; 和 += v; }
+        if (v > 最大) 最大 = v;
+      }
+      return { 光る画素: 数, 明るさ: 和 / Math.max(数, 1), いちばん明るい: 最大 };
+    });
+    const 何度か = [];
+    for (let i = 0; i < 3; i++) { 何度か.push(await 測る()); await pl.waitForTimeout(220); }
+    const なら = (k) => 何度か.reduce((a, r) => a + r[k], 0) / 何度か.length;
+    const 画素 = Math.round(なら('光る画素'));
+    const 明るさ = +なら('明るさ').toFixed(1);
+    ok(画素 > 4000, `輪郭が十分な太さで出ている (光る画素 ${画素})`);
+    ok(明るさ > 75, `輪郭が見える明るさで出ている (平均 ${明るさ} / 255)`);
+    ok(なら('いちばん明るい') > 200, `ときどき強く光る粒がある (いちばん明るい ${Math.round(なら('いちばん明るい'))})`);
+
+    // 「このあたりから蒔く」の帯は外した。型の上に線や文字が残っていないこと
+    const 型の上 = await pl.evaluate(() => {
+      const o = window.__app.odai;
+      const cv = document.getElementById('cv');
+      const c = cv.getContext('2d');
+      const s = cv.width / innerWidth;
+      const y = Math.round((o.bounds.top - 40) * s);    // 型の上端より上
+      const d = c.getImageData(0, y, cv.width, Math.round(30 * s)).data;
+      let 和 = 0, n = 0;
+      for (let i = 0; i < d.length; i += 4) { 和 += d[i]; n++; }
+      return +(和 / n).toFixed(2);
+    });
+    ok(型の上 < 1, `型の上に蒔く目安の帯が出ていない (明るさ ${型の上})`);
+    await ctxL.close();
+
     // ------------------------------------------------ アイコン
     section('アイコン');
     const apple = await phone.evaluate(() =>
@@ -935,7 +934,7 @@ async function run() {
 
     const indexPath = path.join(ROOT, 'index.html');
     const original = fs.readFileSync(indexPath, 'utf8');
-    const OLD_TITLE = '<div id="title">金箔ひらひら</div>';
+    const OLD_TITLE = '<div id="title"><span>金</span><span>箔</span><span>ひ</span><span>ら</span><span>ひ</span><span>ら</span></div>';
     const NEW_TITLE = '<div id="title">こうしんかくにん</div>';
     if (!original.includes(OLD_TITLE)) throw new Error('題字の目印が見つからない');
 
