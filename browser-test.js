@@ -205,10 +205,16 @@ async function run() {
     const odai = await phone.evaluate(() => ({
       shown: document.getElementById('odai-hud').classList.contains('show'),
       name: document.getElementById('odai-name').textContent,
-      btn: document.getElementById('btn-odai').textContent
+      btn: document.querySelector('#btn-odai .cap').textContent,
+      /* 名前を書き換えるときに、線画の絵まで消していないか */
+      絵が残る: !!document.querySelector('#btn-odai svg'),
+      指が切れる: ['btn-slide', 'btn-erase']
+        .every((id) => document.getElementById(id).classList.contains('disabled')),
     }));
     ok(odai.shown && /に蒔く$/.test(odai.name), `お題が出る (${odai.name})`);
     ok(odai.btn === '自由へ', 'ボタンの文字が「自由へ」に変わる');
+    ok(odai.絵が残る, '名前が変わっても、ボタンの絵は消えない');
+    ok(odai.指が切れる, 'お題の間は、ずらす・消すが切れている');
 
     // ひと匙を使い切ると採点まで進む
     await phone.mouse.move(size.w / 2, size.h * 0.22);
@@ -661,8 +667,8 @@ async function run() {
         }));
         return { 名, 選ばれている: [...document.querySelectorAll('#bar .swatch.active')].map((b) => b.id) };
       });
-      ok(中身.名.length === 6 && 中身.名.every((k) => k.名前.trim() && k.絵),
-        `${label}: 6つとも絵と名前が揃う (${中身.名.map((k) => k.名前).join('・')})`);
+      ok(中身.名.length === 8 && 中身.名.every((k) => k.名前.trim() && k.絵),
+        `${label}: 8つとも絵と名前が揃う (${中身.名.map((k) => k.名前).join('・')})`);
       ok(中身.選ばれている.length === 1 && 中身.選ばれている[0] === 'sw-gold',
         `${label}: はじめは金箔が選ばれている`);
 
@@ -931,6 +937,109 @@ async function run() {
     });
     ok(型の上 < 1, `型の上に蒔く目安の帯が出ていない (明るさ ${型の上})`);
     await ctxL.close();
+
+    /* ------------------------------------------------------------------
+       見張り ⑰: 指のやること(蒔く・ずらす・消す)を帯で選べる
+
+       ・速さで見分けていた「ずらす」を、ゆっくりなぞっても効かせられること
+       ・消しゴムが効くこと
+       ・消したものが、あとで何かをずらしても戻ってこないこと
+         (沈殿レイヤーは「下地 + 記録」から描き直すので、見えている絵だけ
+          消すと、次にずらした瞬間に戻ってくる)
+       ・選び替えたら、ちゃんと蒔く手に戻ること
+       ------------------------------------------------------------------ */
+    section('蒔く・ずらす・消す (見張り⑰)');
+    const ctxH = await browser.newContext({ ...DEVICE });
+    const ph = await ctxH.newPage();
+    ph.on('pageerror', (e) => errors.push('見張り⑰: ' + e.message));
+    await 開く(ph);
+    await ph.bringToFront();
+
+    // たっぷり蒔く
+    for (const y of [180, 230, 280]) {
+      await ph.mouse.move(80, y);
+      await ph.mouse.down();
+      for (let x = 80; x <= 350; x += 18) { await ph.mouse.move(x, y); await ph.waitForTimeout(12); }
+      await ph.mouse.up();
+      await ph.waitForTimeout(150);
+    }
+    await ph.waitForTimeout(3600);   // 終端速度から、落ち切るまで約3秒
+    const 帯 = { x0: 175, y0: 330, x1: 255, y1: 520 };
+    const 消す前の帯 = await countFlakes(ph, 帯);
+    ok(消す前の帯 > 200, `消す前に、その帯に箔が積もっている (${消す前の帯} 画素)`);
+
+    // 消す:まんなかを縦になぞる
+    await ph.click('#btn-erase');
+    await ph.waitForTimeout(200);
+    ok(await ph.evaluate(() => document.getElementById('btn-erase').classList.contains('active')),
+      '「消す」が選ばれる');
+    const 記録前 = await ph.evaluate(() => window.__app.settled.length);
+    await ph.mouse.move(215, 300);
+    await ph.mouse.down();
+    for (let y = 300; y <= 560; y += 12) { await ph.mouse.move(215, y); await ph.waitForTimeout(16); }
+    await ph.mouse.up();
+    await ph.waitForTimeout(900);
+    const 消した = await countFlakes(ph, 帯);
+    const 記録後 = await ph.evaluate(() => window.__app.settled.length);
+    ok(消した < 消す前の帯 * 0.2,
+      `なぞった所の箔が消える (${消す前の帯} → ${消した} 画素)`);
+    ok(記録後 < 記録前, `記録からも減っている (${記録前} → ${記録後} 枚)`);
+
+    // 肝心なところ: 消したあとに別の場所をずらしても、消えたものが戻らない
+    await ph.click('#btn-slide');
+    await ph.waitForTimeout(200);
+    await ph.mouse.move(60, 620);
+    await ph.mouse.down();
+    for (let x = 60; x <= 140; x += 10) { await ph.mouse.move(x, 620); await ph.waitForTimeout(16); }
+    await ph.mouse.up();
+    await ph.waitForTimeout(900);
+    const 戻ってきた = await countFlakes(ph, 帯);
+    ok(戻ってきた <= 消した + 30,
+      `消したものは、ずらしても戻ってこない (${消した} → ${戻ってきた} 画素)`);
+
+    // ずらす:ゆっくりなぞっても動く(速さのしきい値に頼らない)
+    const ずらす前 = await ph.evaluate(() => {
+      const s = window.__app.settled.filter((r) => r.x < 200 && r.y > 380 && r.y < 480);
+      return { n: s.length, x: s.reduce((a, r) => a + r.x, 0) / Math.max(s.length, 1) };
+    });
+    await ph.mouse.move(120, 430);
+    await ph.mouse.down();
+    for (let x = 120; x <= 260; x += 10) { await ph.mouse.move(x, 430); await ph.waitForTimeout(24); }
+    await ph.mouse.up();
+    await ph.waitForTimeout(900);
+    const ずらす後 = await ph.evaluate(() => {
+      const s = window.__app.settled.filter((r) => r.y > 380 && r.y < 480);
+      return { n: s.length, x: s.reduce((a, r) => a + r.x, 0) / Math.max(s.length, 1) };
+    });
+    ok(ずらす後.x > ずらす前.x + 20,
+      `ゆっくりなぞっても箔がずれる (平均x ${ずらす前.x.toFixed(0)} → ${ずらす後.x.toFixed(0)})`);
+
+    // ずらす・消すの間は、箔は増えない
+    const 枚数前 = await ph.evaluate(() => window.__app.settled.length);
+    await ph.mouse.move(300, 600);
+    await ph.mouse.down();
+    await ph.waitForTimeout(600);
+    await ph.mouse.up();
+    await ph.waitForTimeout(400);
+    const 枚数後 = await ph.evaluate(() => window.__app.settled.length + window.__app.flakes.length);
+    ok(枚数後 <= 枚数前, `ずらす手では箔が増えない (${枚数前} → ${枚数後} 枚)`);
+
+    // 箔を選び直すと、蒔く手に戻る
+    await ph.click('#sw-gold');
+    await ph.waitForTimeout(200);
+    const 手が戻った = await ph.evaluate(() => ({
+      金: document.getElementById('sw-gold').classList.contains('active'),
+      ずらす: document.getElementById('btn-slide').classList.contains('active'),
+    }));
+    await ph.mouse.move(340, 200);
+    await ph.mouse.down();
+    await ph.waitForTimeout(150);
+    await ph.mouse.up();
+    await ph.waitForTimeout(1600);
+    const また蒔けた = await countFlakes(ph, { x0: 300, y0: 150, x1: 400, y1: 500 });
+    ok(手が戻った.金 && !手が戻った.ずらす && また蒔けた > 100,
+      `箔を選び直すと、また蒔ける (${また蒔けた} 画素)`);
+    await ctxH.close();
 
     // ------------------------------------------------ アイコン
     section('アイコン');

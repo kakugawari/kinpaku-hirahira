@@ -47,16 +47,16 @@
   #bar {
     position: fixed; bottom: 0; left: 0; right: 0;
     display: flex; align-items: flex-end; justify-content: center;
-    gap: 10px;
-    padding: 12px 10px calc(10px + env(safe-area-inset-bottom, 0px));
+    gap: 7px;
+    padding: 12px 8px calc(10px + env(safe-area-inset-bottom, 0px));
     background: linear-gradient(to top, rgba(0,0,0,0.92) 45%, rgba(0,0,0,0));
   }
   .swatch, .tool {
     display: flex; flex-direction: column; align-items: center; gap: 5px;
-    min-width: 46px;             /* 指で押せる幅を切らさない */
-    padding: 2px 4px;
+    min-width: 40px;             /* 指で押せる幅を切らさない */
+    padding: 2px 3px;
     background: none; border: 0;
-    font-family: inherit; font-size: 11px; letter-spacing: 0.12em;
+    font-family: inherit; font-size: 10px; letter-spacing: 0.06em;
     color: rgba(226,206,160,0.7);
     flex: 0 0 auto;              /* 詰まっても押し所を潰さない */
     cursor: pointer;
@@ -66,10 +66,19 @@
 
   /* ===== 箔:くしゃっとした金属の面 ===== */
   .foil {
-    width: 38px; height: 38px; border-radius: 50%;
+    width: 34px; height: 34px; border-radius: 50%;
     box-shadow: inset 0 0 7px rgba(0,0,0,0.5);
     transition: transform 0.15s ease, box-shadow 0.15s ease;
   }
+  .swatch.active, .hand.active { color: rgba(246,230,184,0.95); }
+  /* 選ばれている指の道具は、絵も光らせる */
+  .hand.active svg { filter: drop-shadow(0 0 7px rgba(240,216,120,0.5)); }
+  .hand.active .cap::after {
+    background: linear-gradient(to right,
+      rgba(240,216,120,0), rgba(240,216,120,0.75), rgba(240,216,120,0)) !important;
+  }
+  /* お題の間は、ずらす・消すを使わない(採点が合わなくなる) */
+  .hand.disabled { opacity: 0.32; }
   .swatch.active { color: rgba(246,230,184,0.95); }
   .swatch.active .foil {
     transform: scale(1.06);
@@ -121,7 +130,7 @@
   }
 
   /* ===== 道具:線で描いた絵と名前 ===== */
-  .tool svg { display: block; width: 26px; height: 26px; }
+  .tool svg { display: block; width: 24px; height: 24px; }
   .tool:active { color: #f0d878; }
   .tool:active svg { filter: drop-shadow(0 0 7px rgba(240,216,120,0.55)); }
   .swatch:active .foil { transform: scale(1.06); }
@@ -335,6 +344,23 @@
   <button class="swatch active" id="sw-gold"   aria-label="金箔"><span class="foil"></span><span class="cap">金箔</span></button>
   <button class="swatch"        id="sw-silver" aria-label="銀箔"><span class="foil"></span><span class="cap">銀箔</span></button>
   <button class="swatch"        id="sw-copper" aria-label="赤金"><span class="foil"></span><span class="cap">赤金</span></button>
+  <button class="tool hand" id="btn-slide" aria-label="ずらす">
+    <!-- 指先と、その後ろに引く筋 -->
+    <svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="19.4" cy="14" r="3.3" fill="currentColor" stroke="none"/>
+      <path d="M4 8.4 L14 8.4 M4 14 L14.2 14 M4 19.6 L14 19.6"/>
+    </svg>
+    <span class="cap">ずらす</span>
+  </button>
+  <button class="tool hand" id="btn-erase" aria-label="消す">
+    <!-- 消しゴム -->
+    <svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M10.2 20.4 L5.1 15.3 A1.6 1.6 0 0 1 5.1 13 L13.9 4.2 A1.6 1.6 0 0 1 16.2 4.2 L21.3 9.3 A1.6 1.6 0 0 1 21.3 11.6 L12.5 20.4 Z"/>
+      <path d="M9.5 8.6 L16.9 16"/>
+      <path d="M8.4 23.4 L21.8 23.4"/>
+    </svg>
+    <span class="cap">消す</span>
+  </button>
   <div class="divider"></div>
   <button class="tool" id="btn-odai" aria-label="お題">
     <!-- 扇 -->
@@ -674,6 +700,10 @@ function drawSparkles() {
 /* ============================================================
    入力:タップで一振り、長押し・なぞりで撒き続ける
    ============================================================ */
+/* 指がいまやること。速さで見分けると「ゆっくり押しやりたい」が蒔きに
+   なってしまうので、下の帯で選ぶ。速い払いは蒔くモードの近道として残す */
+let 手 = "蒔く";     /* 蒔く | ずらす | 消す */
+
 const pointer = { down: false, x: 0, y: 0, holdTime: 0 };
 const hint = document.getElementById("hint");
 let touched = false;
@@ -741,16 +771,59 @@ function emitBurst(x, y, count, big) {
   }
 }
 
+/* ずらす・消すは、指の通り道ぜんぶに効かせる。ただし1回ごとに沈殿レイヤーを
+   描き直すので、動くたびに呼ぶと重い。少し進むか、少し時間が経つまで溜める */
+const 手の歩幅 = 13;        /* この距離だけ動いたら1回効かせる(px) */
+const 手の間隔 = 55;        /* または、この時間が経ったら(ミリ秒) */
+const 手の道 = [];          /* 溜めている通り道 */
+let 手の時 = 0;
+
+function 手を始める(x, y) {
+  手の道.length = 0;
+  手の道.push({ x, y });
+  手の時 = performance.now();
+}
+
+function 手を進める(x, y) {
+  const 前 = 手の道[手の道.length - 1];
+  const 進み = 前 ? Math.hypot(x - 前.x, y - 前.y) : 0;
+  手の道.push({ x, y });
+  const 経過 = performance.now() - 手の時;
+  if (進み < 0.5 && 手 === "ずらす") return;          /* 止まっていたら、ずらすものが無い */
+  if (手の道.length >= 2 && (進み >= 手の歩幅 || 経過 >= 手の間隔)) 手を効かせる();
+}
+
+function 手を効かせる() {
+  if (手の道.length < 2) return;
+  const a = 手の道[0], b = 手の道[手の道.length - 1];
+  if (手 === "ずらす") slidePush(手の道.slice(), b.x - a.x, b.y - a.y);
+  else if (手 === "消す") erasePath(手の道.slice());
+  /* 次のひと筆は、いまの指先から続ける */
+  手の道.length = 0;
+  手の道.push({ x: b.x, y: b.y });
+  手の時 = performance.now();
+}
+
 function onDown(x, y) {
   pointer.down = true; pointer.x = x; pointer.y = y; pointer.holdTime = 0;
   trail.length = 0;
   pushTrail(x, y);
-  emitBurst(x, y, 20, false);       /* タップの瞬間にぱっとひと振り(砂子中心なので多めに) */
+  if (手 === "蒔く") {
+    emitBurst(x, y, 20, false);     /* タップの瞬間にぱっとひと振り(砂子中心なので多めに) */
+  } else {
+    手を始める(x, y);
+    if (手 === "消す") erasePath([{ x, y }, { x: x + 0.01, y }]);   /* 触れた所はすぐ消える */
+  }
   hideHint();
 }
 function onMove(x, y) {
   if (!pointer.down) return;
   pushTrail(x, y);
+  if (手 !== "蒔く") {
+    手を進める(x, y);
+    pointer.x = x; pointer.y = y;
+    return;
+  }
   /* なぞった軌跡に沿って撒く */
   const dx = x - pointer.x, dy = y - pointer.y;
   const dist = Math.hypot(dx, dy);
@@ -763,6 +836,12 @@ function onMove(x, y) {
 function onUp() {
   if (!pointer.down) return;
   pointer.down = false;
+  if (手 !== "蒔く") {
+    手を効かせる();          /* 溜めていたぶんを最後に効かせる */
+    手の道.length = 0;
+    trail.length = 0;
+    return;
+  }
   /* フリック判定:直近の軌跡から離した瞬間の速度を求める */
   if (trail.length >= 2) {
     const a = trail[0], b = trail[trail.length - 1];
@@ -858,6 +937,40 @@ function distToPath(px, py, path) {
   return d;
 }
 
+/* ============================================================
+   通り道のまわりだけを描き直す
+   ------------------------------------------------------------
+   ずらす・消すのたびに沈殿レイヤーを全部描き直していたら、記録が
+   2000枚たまった状態で 1コマ 83ms (CPU4倍遅で12fps)。触った所だけ
+   切り抜いて、そこに関わる記録だけ塗り直せば、枚数によらず軽い。
+   ============================================================ */
+function 通り道の形(path, r) {
+  const 道 = new Path2D();
+  let 前 = null;
+  for (const p of path) {
+    /* 点が細かすぎると円を何十個も置くことになる。半径の半分ずつに間引く */
+    if (前 && Math.hypot(p.x - 前.x, p.y - 前.y) < r * 0.5) continue;
+    道.moveTo(p.x + r, p.y);
+    道.arc(p.x, p.y, r, 0, Math.PI * 2);
+    前 = p;
+  }
+  const 終 = path[path.length - 1];
+  道.moveTo(終.x + r, 終.y);
+  道.arc(終.x, 終.y, r, 0, Math.PI * 2);
+  return 道;
+}
+
+/* 切り抜いた中を一度まっさらにして、そこに残るものだけ置き直す。
+   下地(記録から溢れて焼き付けたぶん)を戻すかどうかは、用で変わる */
+function 通り道を描き直す(道, 残る記録, 下地を戻す) {
+  sedCtx.save();
+  sedCtx.clip(道);
+  sedCtx.clearRect(0, 0, W, H);
+  if (下地を戻す) sedCtx.drawImage(baseCv, 0, 0, W, H);
+  sedCtx.restore();
+  for (const r of 残る記録) paintSettled(sedCtx, r);
+}
+
 /* 払った:通り道のそばの箔を拾って、なぞった向きへすべらせる */
 function slidePush(path, dx, dy) {
   const travel = Math.hypot(dx, dy);
@@ -889,12 +1002,92 @@ function slidePush(path, dx, dy) {
   }
   if (moved === 0) return 0;
 
-  /* 拾った箔は沈殿レイヤーから外す(残った記録から描き直す) */
+  /* 拾った箔は沈殿レイヤーから外す。触った所だけ作り直し、
+     そこに残る記録を置き直す(下地はそのまま残す) */
   settled.length = 0;
   for (const r of kept) settled.push(r);
-  rebuildSediment();
+  const 道 = 通り道の形(path, PUSH_RADIUS + 12);
+  通り道を描き直す(道, kept.filter((r) => distToPath(r.x, r.y, path) < PUSH_RADIUS + 26), true);
   sparkles.length = 0;
   return moved;
+}
+
+/* ============================================================
+   消す:指のまわりの箔を、散らしながら薄れさせて取り除く
+   ------------------------------------------------------------
+   見えている絵(沈殿レイヤー)だけ消しても足りない。ずらすときに
+   「下地 + 記録」から描き直す作りなので、記録を落とさないと
+   次にずらした瞬間に戻ってくる。5000枚を超えて記録から溢れた古い箔は
+   下地に焼き付いていて記録が無いので、そちらは画素を直接消す。
+   ・記録から捨てる ・下地の画素を消す ・描き直す の3つで1組
+   ============================================================ */
+const ERASE_RADIUS = 52;       /* 指の通り道から、この距離までが消える(px) */
+const 消えゆく = [];            /* 散りながら薄れていく箔 */
+const FADE_DUR = 0.45;
+
+function erasePath(path) {
+  const kept = [];
+  const 近く = [];
+  let 消した = 0;
+  for (const r of settled) {
+    const d = distToPath(r.x, r.y, path);
+    if (d >= ERASE_RADIUS) {
+      kept.push(r);
+      /* すぐ外の箔は、絵が切り抜きにかかるので塗り直しの対象に入れる
+         (入れないと、消した縁に沿って箔が齧られたように欠ける) */
+      if (d < ERASE_RADIUS + 20) 近く.push(r);
+      continue;
+    }
+    /* 縁はまばらに消す。まるく切り抜いたような跡にしない。
+       消さずに残した箔は、このあと塗り直すので縁がぎざぎざに残る */
+    const w = 1 - d / ERASE_RADIUS;
+    if (Math.random() > 0.3 + w * 0.7) { kept.push(r); 近く.push(r); continue; }
+    const a = Math.random() * Math.PI * 2;
+    const 飛ぶ = 6 + Math.random() * 24 * w;
+    消えゆく.push({
+      rec: r, x0: r.x, y0: r.y,
+      x1: r.x + Math.cos(a) * 飛ぶ, y1: r.y + Math.sin(a) * 飛ぶ - 5,
+      rot0: r.rot, rot1: r.rot + (Math.random() - 0.5) * 1.4,
+      t: 0, dur: FADE_DUR * (0.7 + Math.random() * 0.6),
+    });
+    消した++;
+  }
+  settled.length = 0;
+  for (const r of kept) settled.push(r);
+
+  const 道 = 通り道の形(path, ERASE_RADIUS);
+  /* 記録から溢れて下地に焼き付いたぶんは、画素を直接消す。
+     消さないと、次に何かをずらしたときに戻ってくる */
+  baseCtx.save();
+  baseCtx.clip(道);
+  baseCtx.clearRect(0, 0, W, H);
+  baseCtx.restore();
+  /* 見えている絵も同じ所を抜いて、残した箔だけ置き直す(下地は戻さない) */
+  通り道を描き直す(道, 近く, false);
+  sparkles.length = 0;          /* 消えた箔を光らせ続けない */
+  return 消した;
+}
+
+function update消えゆく(dt) {
+  for (let i = 消えゆく.length - 1; i >= 0; i--) {
+    消えゆく[i].t += dt;
+    if (消えゆく[i].t >= 消えゆく[i].dur) 消えゆく.splice(i, 1);
+  }
+}
+
+function draw消えゆく() {
+  for (const s of 消えゆく) {
+    const p = Math.min(s.t / s.dur, 1);
+    const e = 1 - Math.pow(1 - p, 2);
+    const r = s.rec;
+    ctx.save();
+    ctx.translate(s.x0 + (s.x1 - s.x0) * e, s.y0 + (s.y1 - s.y0) * e);
+    ctx.rotate(s.rot0 + (s.rot1 - s.rot0) * e);
+    ctx.globalAlpha = (r.flipped ? 0.85 : r.bright) * (1 - p);
+    ctx.fillStyle = r.color;
+    drawPoly(ctx, r.verts, 1);
+    ctx.restore();
+  }
 }
 
 /* すべっている箔を進め、着いたものは置き直す */
@@ -1083,7 +1276,13 @@ function startOdai(pick) {
   resetRound();
   hideHint();                 /* 案内文が型に重なるので消す */
   hud.classList.add("show");
-  document.getElementById("btn-odai").textContent = "自由へ";
+  お題ボタンの名前("自由へ");
+  指をお題向けにする();
+}
+
+/* 名前だけ書き換える。ボタンの中身ごと書き換えると、線画の絵まで消える */
+function お題ボタンの名前(名) {
+  document.querySelector("#btn-odai .cap").textContent = 名;
 }
 
 /* お題モードを抜ける(作品はそのまま残す) */
@@ -1092,7 +1291,8 @@ function endOdai() {
   odai.result = null;
   hud.classList.remove("show");
   resultEl.classList.remove("show");
-  document.getElementById("btn-odai").textContent = "お題";
+  お題ボタンの名前("お題");
+  指をお題向けにする();
 }
 
 document.getElementById("btn-odai").addEventListener("click", () => {
@@ -1189,6 +1389,7 @@ document.getElementById("btn-clear").addEventListener("click", () => {
     return;
   }
   sliding.length = 0;
+  消えゆく.length = 0;
   baseCtx.clearRect(0, 0, W, H);   /* 記録から溢れて下地へ焼いたぶんも消す */
   washAway();
   if (odai.active) resetRound();   /* ひと匙も戻す */
@@ -1326,13 +1527,40 @@ function drawShapeOutline() {
    色の切り替え
    ============================================================ */
 const swatches = { gold: "sw-gold", silver: "sw-silver", copper: "sw-copper" };
+/* 指がやることの並び。ここから1つだけが選ばれている */
+const 指の並び = [...Object.values(swatches), "btn-slide", "btn-erase"];
+
+function 指を選ぶ(id) {
+  for (const k of 指の並び) {
+    document.getElementById(k).classList.toggle("active", k === id);
+  }
+}
+
 for (const [key, id] of Object.entries(swatches)) {
   document.getElementById(id).addEventListener("click", () => {
     currentPalette = key;
-    for (const id2 of Object.values(swatches)) {
-      document.getElementById(id2).classList.toggle("active", id2 === id);
-    }
+    手 = "蒔く";
+    指を選ぶ(id);
   });
+}
+
+for (const [id, やること] of [["btn-slide", "ずらす"], ["btn-erase", "消す"]]) {
+  document.getElementById(id).addEventListener("click", () => {
+    if (odai.active) { toast("お題の間は使えません"); return; }
+    手 = やること;
+    指を選ぶ(id);
+  });
+}
+
+/* お題では採点が絡む。ずらす・消すを切って、蒔く手に戻す */
+function 指をお題向けにする() {
+  for (const id of ["btn-slide", "btn-erase"]) {
+    document.getElementById(id).classList.toggle("disabled", odai.active);
+  }
+  if (odai.active && 手 !== "蒔く") {
+    手 = "蒔く";
+    指を選ぶ(swatches[currentPalette]);
+  }
 }
 
 /* ============================================================
@@ -1510,10 +1738,13 @@ function frame(now) {
   }
 
   /* --- 長押し中は撒き続ける(押している時間で少しずつ勢いが増す) --- */
-  if (pointer.down) {
+  if (pointer.down && 手 === "蒔く") {
     pointer.holdTime += dt;
     const rate = Math.min(3 + pointer.holdTime * 3, 9);  /* 毎フレームの発生数 */
     emitBurst(pointer.x, pointer.y, rate | 0, pointer.holdTime > 1.2);
+  } else if (pointer.down && 手 === "消す") {
+    /* 押したまま止めていても、その場が消え続ける(消しゴムらしく) */
+    手を進める(pointer.x, pointer.y);
   }
 
   /* --- 舞っている箔の更新 --- */
@@ -1541,6 +1772,7 @@ function frame(now) {
 
   updateSparkles(dt);
   updateSliding(dt);
+  update消えゆく(dt);
 
   /* --- 描画 --- */
   drawBackground(ctx);
@@ -1560,8 +1792,9 @@ function frame(now) {
   /* 積もった箔 */
   ctx.drawImage(sedCv, 0, 0, W, H);
 
-  /* すべっている最中の箔 */
+  /* すべっている最中の箔と、消えていく箔 */
   drawSliding();
+  draw消えゆく();
 
   /* お題の型の輪郭(積もった箔の上、舞う箔の下) */
   drawShapeOutline();
