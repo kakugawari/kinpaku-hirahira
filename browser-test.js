@@ -141,27 +141,6 @@ async function run() {
     const size = await phone.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
     ok(size.w > 0 && size.h > 0, `画面が立ち上がる (${size.w}x${size.h})`);
 
-    /* 隅の題字も1字ずつ積んである。writing-mode に任せると、字の送りを
-       0 で返すフォントの環境で「金」と「箔」が重なって刷られる */
-    const 隅の題字 = await phone.evaluate(() => {
-      const el = document.getElementById('title');
-      const boxes = [...el.children].map((sp) => {
-        const b = sp.getBoundingClientRect();
-        return { 字: sp.textContent, top: b.top, 高さ: b.height };
-      });
-      const 送り = [];
-      for (let i = 1; i < boxes.length; i++) 送り.push(boxes[i].top - boxes[i - 1].top);
-      return {
-        読み: boxes.map((b) => b.字).join(''),
-        字数: boxes.length,
-        重なり: 送り.filter((d, i) => d < boxes[i].高さ * 0.8).length,
-        最小: Math.min(...送り), 最大: Math.max(...送り),
-      };
-    });
-    ok(隅の題字.読み === '金箔ひらひら' && 隅の題字.字数 === 6 && 隅の題字.重なり === 0 &&
-       隅の題字.最大 - 隅の題字.最小 < 2,
-      `隅の題字の6字が重ならずに並ぶ (送り ${隅の題字.最小.toFixed(0)}〜${隅の題字.最大.toFixed(0)}px)`);
-
     // ------------------------------------------------ 蒔ける
     section('金箔を蒔く');
     await phone.mouse.move(size.w / 2, size.h * 0.35);
@@ -655,11 +634,14 @@ async function run() {
           .filter((k) => getComputedStyle(k).display !== 'none')
           .map((k) => k.getBoundingClientRect());
         /* 仕切り線は飾りなので、押せる大きさの対象から外す */
-        const 押す = [...el.querySelectorAll('.swatch, .btn')].map((k) => k.getBoundingClientRect());
+        const 押す = [...el.querySelectorAll('button')].map((k) => k.getBoundingClientRect());
         return {
           溢れ: el.scrollWidth - Math.round(el.getBoundingClientRect().width),
           はみ出し: kids.some((k) => k.left < 0 || k.right > innerWidth),
-          一段: kids.every((k) => Math.abs(k.top - kids[0].top) < 20),
+          /* 一段に収まっているか。背の高さが揃っていないので、上端を比べると
+             揃っていないだけで落ちる。縦の範囲が重なっているかで見る
+             (折り返したら、二段目は一段目と縦に重ならない) */
+          一段: kids.every((k) => k.top < kids[0].bottom && k.bottom > kids[0].top),
           押せる数: 押す.length,
           最小の押し所: Math.min(...押す.map((k) => Math.min(k.width, k.height))),
         };
@@ -668,6 +650,45 @@ async function run() {
       ok(bar.一段, `${label}: 操作帯が一段に収まる`);
       ok(bar.最小の押し所 >= 28,
         `${label}: ${bar.押せる数}つの操作すべてが指で押せる大きさ (最小 ${Math.round(bar.最小の押し所)}px)`);
+
+      /* 6つとも「絵 + 名前」で並んでいること。
+         名前が抜けたり、道具の絵が出ていなければ落ちる */
+      const 中身 = await pbar.evaluate(() => {
+        const 名 = [...document.querySelectorAll('#bar button')].map((b) => ({
+          id: b.id,
+          名前: (b.querySelector('.cap') || {}).textContent || '',
+          絵: !!(b.querySelector('.foil') || b.querySelector('svg')),
+        }));
+        return { 名, 選ばれている: [...document.querySelectorAll('#bar .swatch.active')].map((b) => b.id) };
+      });
+      ok(中身.名.length === 6 && 中身.名.every((k) => k.名前.trim() && k.絵),
+        `${label}: 6つとも絵と名前が揃う (${中身.名.map((k) => k.名前).join('・')})`);
+      ok(中身.選ばれている.length === 1 && 中身.選ばれている[0] === 'sw-gold',
+        `${label}: はじめは金箔が選ばれている`);
+
+      // 箔を選び替えると、印も撒く色も移る
+      await pbar.click('#sw-silver');
+      await pbar.waitForTimeout(200);
+      const 選び替え = await pbar.evaluate(() => {
+        const a = [...document.querySelectorAll('#bar .swatch.active')].map((b) => b.id);
+        return { 印: a, 数: a.length };
+      });
+      ok(選び替え.数 === 1 && 選び替え.印[0] === 'sw-silver',
+        `${label}: 箔を選び替えると印が移る (${選び替え.印.join(',')})`);
+      await pbar.mouse.move(CX, Math.round(V.height * 0.35));
+      await pbar.mouse.down(); await pbar.waitForTimeout(150); await pbar.mouse.up();
+      await pbar.waitForTimeout(1500);
+      const 銀 = await pbar.evaluate(() => {
+        const cv = document.getElementById('cv');
+        const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+        let 銀色 = 0, 金色 = 0;
+        for (let i = 0; i < d.length; i += 4) {
+          if (d[i] < 110) continue;
+          if (d[i] > d[i + 2] + 30) 金色++; else 銀色++;   // 青が残っていれば銀
+        }
+        return { 銀色, 金色 };
+      });
+      ok(銀.銀色 > 銀.金色 * 3, `${label}: 銀箔を選ぶと銀色が撒かれる (銀 ${銀.銀色} / 金 ${銀.金色} 画素)`);
       await ctxBar.close();
     }
 
@@ -934,20 +955,20 @@ async function run() {
 
     const indexPath = path.join(ROOT, 'index.html');
     const original = fs.readFileSync(indexPath, 'utf8');
-    const OLD_TITLE = '<div id="title"><span>金</span><span>箔</span><span>ひ</span><span>ら</span><span>ひ</span><span>ら</span></div>';
-    const NEW_TITLE = '<div id="title">こうしんかくにん</div>';
-    if (!original.includes(OLD_TITLE)) throw new Error('題字の目印が見つからない');
+    const OLD_TITLE = '<div id="hint">触れて蒔き なでてずらす</div>';
+    const NEW_TITLE = '<div id="hint">こうしんかくにん</div>';
+    if (!original.includes(OLD_TITLE)) throw new Error('案内文の目印が見つからない');
 
     let title = '';
     try {
       fs.writeFileSync(indexPath, original.replace(OLD_TITLE, NEW_TITLE));
       await swPage.reload();
       await swPage.waitForTimeout(500);
-      title = (await swPage.textContent('#title')).trim();
+      title = (await swPage.textContent('#hint')).trim();
     } finally {
       fs.writeFileSync(indexPath, original);   // かならず元へ戻す
     }
-    ok(title === 'こうしんかくにん', `直したものが 1 回のリロードで出る (題字: ${title})`);
+    ok(title === 'こうしんかくにん', `直したものが 1 回のリロードで出る (案内文: ${title})`);
 
     await swPage.reload();
     await swPage.waitForTimeout(600);

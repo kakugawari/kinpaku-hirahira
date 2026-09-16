@@ -28,21 +28,6 @@
   }
   canvas { display: block; }
 
-  /* ===== 題字(左上に小さく) ===== */
-  #title {
-    /* ホーム画面から開くと画面いっぱいに広がるので、上の余白を足さないと
-       時計やダイナミックアイランドの裏に入る (iPhone 16 Plus は上 59pt) */
-    position: fixed; top: calc(14px + env(safe-area-inset-top, 0px)); left: 18px;
-    color: rgba(201,162,75,0.85);
-    /* 縦書き。writing-mode で組むと字の送りがフォント任せになり、
-       漢字の送りを 0 で返す環境では「金」と「箔」が重なって刷られる。
-       1字ずつ箱に入れて積み、送りは line-height で決める */
-    display: flex; flex-direction: column; align-items: center;
-    font-size: 15px; line-height: 1.35; letter-spacing: 0;
-    pointer-events: none;
-    text-shadow: 0 0 12px rgba(201,162,75,0.25);
-  }
-
   /* ===== 最初の案内文(触れると消える) ===== */
   #hint {
     position: fixed; top: 50%; left: 50%;
@@ -56,32 +41,94 @@
   }
   #hint.hidden { opacity: 0; }
 
-  /* ===== 下部の操作帯:漆の艶をイメージした半透明バー ===== */
+  /* ===== 下部の操作帯 =====
+     箔も道具も「絵 + 名前」の縦並びで揃える。
+     いま選んでいる箔は、輪の光と名前の下の線で示す ===== */
   #bar {
     position: fixed; bottom: 0; left: 0; right: 0;
-    display: flex; align-items: center; justify-content: center;
-    gap: 12px;
-    padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
-    background: linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0));
+    display: flex; align-items: flex-end; justify-content: center;
+    gap: 10px;
+    padding: 12px 10px calc(10px + env(safe-area-inset-bottom, 0px));
+    background: linear-gradient(to top, rgba(0,0,0,0.92) 45%, rgba(0,0,0,0));
   }
-  .swatch {
-    width: 30px; height: 30px; border-radius: 50%;
-    border: 1px solid rgba(255,255,255,0.15);
-    cursor: pointer;
+  .swatch, .tool {
+    display: flex; flex-direction: column; align-items: center; gap: 5px;
+    min-width: 46px;             /* 指で押せる幅を切らさない */
+    padding: 2px 4px;
+    background: none; border: 0;
+    font-family: inherit; font-size: 11px; letter-spacing: 0.12em;
+    color: rgba(226,206,160,0.7);
     flex: 0 0 auto;              /* 詰まっても押し所を潰さない */
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .cap { position: relative; padding-bottom: 5px; white-space: nowrap; }
+
+  /* ===== 箔:くしゃっとした金属の面 ===== */
+  .foil {
+    width: 38px; height: 38px; border-radius: 50%;
+    box-shadow: inset 0 0 7px rgba(0,0,0,0.5);
     transition: transform 0.15s ease, box-shadow 0.15s ease;
   }
-  .swatch.active {
-    transform: scale(1.18);
-    box-shadow: 0 0 10px 2px rgba(255,240,190,0.35);
-    border-color: rgba(255,240,190,0.7);
+  .swatch.active { color: rgba(246,230,184,0.95); }
+  .swatch.active .foil {
+    transform: scale(1.06);
+    box-shadow: inset 0 0 7px rgba(0,0,0,0.35),
+                0 0 0 1.5px rgba(255,240,196,0.85),
+                0 0 16px 2px rgba(240,200,110,0.45);
   }
-  #sw-gold   { background: radial-gradient(circle at 35% 35%, #f4dc86, #c89a34 70%); }
-  #sw-silver { background: radial-gradient(circle at 35% 35%, #f2f4f7, #a7adb6 70%); }
-  #sw-copper { background: radial-gradient(circle at 35% 35%, #e59a55, #a8511f 70%); }
+  /* 名前の下の線。選んでいる箔にだけ引く */
+  .swatch.active .cap::after, .tool .cap::after {
+    content: ""; position: absolute; bottom: 0; height: 1px;
+    left: -2px; right: -2px;
+    background: linear-gradient(to right,
+      rgba(240,216,120,0), rgba(240,216,120,0.75), rgba(240,216,120,0));
+  }
+  .tool .cap::after { background: linear-gradient(to right,
+      rgba(214,186,130,0), rgba(214,186,130,0.5), rgba(214,186,130,0)); }
 
-  .divider { width: 1px; height: 22px; background: rgba(255,255,255,0.12); }
+  /* 箔の面は、光る所と翳る所をずらして重ねる。円錐グラデーションだけだと
+     中心から風車のように筋が集まって、金属の板に見えてしまう */
+  #sw-gold .foil {
+    background:
+      radial-gradient(ellipse 62% 46% at 26% 22%, rgba(255,252,228,0.95) , rgba(0,0,0,0) 62%),
+      radial-gradient(ellipse 46% 34% at 73% 69%, rgba(255,240,190,0.5), rgba(0,0,0,0) 66%),
+      radial-gradient(ellipse 42% 30% at 67% 25%, rgba(92,58,10,0.5), rgba(0,0,0,0) 70%),
+      radial-gradient(ellipse 52% 34% at 21% 75%, rgba(92,58,10,0.5), rgba(0,0,0,0) 70%),
+      radial-gradient(ellipse 26% 52% at 50% 54%, rgba(255,240,190,0.5), rgba(0,0,0,0) 72%),
+      conic-gradient(from 25deg at 34% 30%, #d9a93f, #f4dc86 12%, #b8862f 28%, #f7e9b0 44%,
+                     #c69436 60%, #efd47a 76%, #a9762a 90%, #d9a93f);
+  }
+  #sw-silver .foil {
+    background:
+      radial-gradient(ellipse 62% 46% at 26% 22%, rgba(255,255,255,0.95) , rgba(0,0,0,0) 62%),
+      radial-gradient(ellipse 46% 34% at 73% 69%, rgba(236,242,248,0.5), rgba(0,0,0,0) 66%),
+      radial-gradient(ellipse 42% 30% at 67% 25%, rgba(58,64,74,0.45), rgba(0,0,0,0) 70%),
+      radial-gradient(ellipse 52% 34% at 21% 75%, rgba(58,64,74,0.45), rgba(0,0,0,0) 70%),
+      radial-gradient(ellipse 26% 52% at 50% 54%, rgba(236,242,248,0.5), rgba(0,0,0,0) 72%),
+      conic-gradient(from 25deg at 34% 30%, #b9bec7, #eef1f5 12%, #8e949e 28%, #ffffff 44%,
+                     #a9aeb8 60%, #e2e7ee 76%, #7d838d 90%, #b9bec7);
+  }
+  #sw-copper .foil {
+    background:
+      radial-gradient(ellipse 62% 46% at 26% 22%, rgba(255,226,196,0.92) , rgba(0,0,0,0) 62%),
+      radial-gradient(ellipse 46% 34% at 73% 69%, rgba(240,170,110,0.5), rgba(0,0,0,0) 66%),
+      radial-gradient(ellipse 42% 30% at 67% 25%, rgba(74,30,6,0.5), rgba(0,0,0,0) 70%),
+      radial-gradient(ellipse 52% 34% at 21% 75%, rgba(74,30,6,0.5), rgba(0,0,0,0) 70%),
+      radial-gradient(ellipse 26% 52% at 50% 54%, rgba(240,170,110,0.5), rgba(0,0,0,0) 72%),
+      conic-gradient(from 25deg at 34% 30%, #b25a26, #e59a55 12%, #8f4318 28%, #f0b276 44%,
+                     #a8511f 60%, #d97a35 76%, #7d3a13 90%, #b25a26);
+  }
 
+  /* ===== 道具:線で描いた絵と名前 ===== */
+  .tool svg { display: block; width: 26px; height: 26px; }
+  .tool:active { color: #f0d878; }
+  .tool:active svg { filter: drop-shadow(0 0 7px rgba(240,216,120,0.55)); }
+  .swatch:active .foil { transform: scale(1.06); }
+
+  .divider { width: 1px; height: 36px; margin-bottom: 8px; background: rgba(255,255,255,0.12); }
+
+  /* ===== 枠付きのボタン(結果・記録の帳で使う) ===== */
   .btn {
     color: rgba(220,196,140,0.85);
     background: none; border: 1px solid rgba(220,196,140,0.3);
@@ -89,11 +136,10 @@
     font-family: inherit; font-size: 12px; letter-spacing: 0.15em;
     padding: 7px 12px;
     white-space: nowrap;
-    flex: 0 0 auto;              /* 詰まっても押し所を潰さない */
+    flex: 0 0 auto;
     cursor: pointer;
   }
   .btn:active { background: rgba(220,196,140,0.12); }
-
 
   /* ===== お題モード:上部の掲示(お題名と残りひと匙) ===== */
   #odai-hud {
@@ -283,17 +329,43 @@
 <body>
 
 <canvas id="cv"></canvas>
-<div id="title"><span>金</span><span>箔</span><span>ひ</span><span>ら</span><span>ひ</span><span>ら</span></div>
 <div id="hint">触れて蒔き なでてずらす</div>
 
 <div id="bar">
-  <div class="swatch active" id="sw-gold"   title="金"></div>
-  <div class="swatch"        id="sw-silver" title="銀"></div>
-  <div class="swatch"        id="sw-copper" title="赤金"></div>
+  <button class="swatch active" id="sw-gold"   aria-label="金箔"><span class="foil"></span><span class="cap">金箔</span></button>
+  <button class="swatch"        id="sw-silver" aria-label="銀箔"><span class="foil"></span><span class="cap">銀箔</span></button>
+  <button class="swatch"        id="sw-copper" aria-label="赤金"><span class="foil"></span><span class="cap">赤金</span></button>
   <div class="divider"></div>
-  <button class="btn" id="btn-odai">お題</button>
-  <button class="btn" id="btn-book">記録</button>
-  <button class="btn" id="btn-clear">払う</button>
+  <button class="tool" id="btn-odai" aria-label="お題">
+    <!-- 扇 -->
+    <svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M2.9 16.4 A13 13 0 0 1 25.1 16.4 L16.8 21.3 A3.2 3.2 0 0 0 11.2 21.3 Z"/>
+      <path d="M7.5 11.8 L12.4 20.2 M14 10 L14 19.8 M20.5 11.8 L15.6 20.2"/>
+      <circle cx="14" cy="23.1" r="1.1"/>
+    </svg>
+    <span class="cap">お題</span>
+  </button>
+  <button class="tool" id="btn-book" aria-label="記録">
+    <!-- ひらいた帳 -->
+    <svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M14 8.6 C11.4 6.9 7.6 6.5 4.6 7.1 L4.6 20.9 C7.6 20.3 11.4 20.7 14 22.4"/>
+      <path d="M14 8.6 C16.6 6.9 20.4 6.5 23.4 7.1 L23.4 20.9 C20.4 20.3 16.6 20.7 14 22.4"/>
+      <path d="M14 8.6 L14 22.4"/>
+      <path d="M17.2 10.6 L20.8 10.2 M17.2 13.3 L20.8 12.9 M7.2 10.2 L10.8 10.6"/>
+    </svg>
+    <span class="cap">記録</span>
+  </button>
+  <button class="tool" id="btn-clear" aria-label="払う">
+    <!-- 積んだ小判 -->
+    <svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <ellipse cx="14" cy="9.2" rx="8" ry="3.1"/>
+      <path d="M6 9.2 L6 13.8 M22 9.2 L22 13.8"/>
+      <ellipse cx="14" cy="13.8" rx="8" ry="3.1"/>
+      <path d="M6 13.8 L6 18.4 M22 13.8 L22 18.4"/>
+      <ellipse cx="14" cy="18.4" rx="8" ry="3.1"/>
+    </svg>
+    <span class="cap">払う</span>
+  </button>
 </div>
 
 <!-- お題モード:上部掲示 -->
