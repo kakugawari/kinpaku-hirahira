@@ -79,6 +79,27 @@ function countFlakes(page, box) {
   }, box);
 }
 
+/**
+ * タイトル画面を閉じて、遊ぶ画面に入る。
+ * 開くたびにタイトルが出るので、ほとんどのテストは最初にこれを通る。
+ */
+async function タイトルを閉じる(page) {
+  await page.waitForSelector('#title-screen');
+  await page.click('#title-screen');
+  await page.waitForSelector('#title-screen.off', { state: 'attached' });
+}
+
+async function 開く(page) {
+  await page.goto(URL);
+  await タイトルを閉じる(page);
+}
+
+/** 開き直す。タイトルは開くたびに出るので、ここでも閉じる */
+async function 開き直す(page) {
+  await page.reload();
+  await タイトルを閉じる(page);
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function run() {
@@ -91,7 +112,12 @@ async function run() {
     process.exit(1);
   }
 
-  const V = devices[PHONE].viewport;          // 430 x 739
+  /* iPhone 16 Plus は 15 Plus と画面の大きさが同じ (430x932 / 3倍)。
+     入っている playwright が 16 の名前を知らないときは、同寸の 15 Plus で代える。
+     ここで落とすと、測り直したいときにテストが一つも動かせない */
+  const DEVICE = devices[PHONE] || devices['iPhone 15 Plus'];
+  if (!DEVICE) throw new Error('端末の設定が見つからない: ' + PHONE);
+  const V = DEVICE.viewport;                 // 430 x 739
   const CX = Math.round(V.width / 2);        // 画面の横のまんなか
 
   const server = spawn(process.execPath, [path.join(ROOT, 'serve.js'), String(PORT)], {
@@ -105,11 +131,11 @@ async function run() {
   try {
     // ------------------------------------------------ まず開く
     section('スマホで開く');
-    const context = await browser.newContext({ ...devices[PHONE] });
+    const context = await browser.newContext({ ...DEVICE });
     const phone = await context.newPage();
     phone.on('pageerror', (e) => errors.push('スマホ: ' + e.message));
     phone.on('console', (m) => { if (m.type() === 'error') errors.push('スマホ: ' + m.text()); });
-    await phone.goto(URL);
+    await 開く(phone);
     await phone.waitForTimeout(500);
 
     const size = await phone.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
@@ -139,10 +165,10 @@ async function run() {
        箔は右へついてくる。捕まえていないと左に貼り付いたままになる。
        ------------------------------------------------------------------ */
     section('指が操作帯に載っても追ってくる (見張り①)');
-    const ctx2 = await browser.newContext({ ...devices[PHONE] });
+    const ctx2 = await browser.newContext({ ...DEVICE });
     const p2 = await ctx2.newPage();
     p2.on('pageerror', (e) => errors.push('見張り①: ' + e.message));
-    await p2.goto(URL);
+    await 開く(p2);
     await p2.waitForTimeout(500);
 
     const barY = size.h - 12;              // 操作帯のまんなかあたり
@@ -213,10 +239,10 @@ async function run() {
        お題に入ると『触れて蒔き はらいて風』が型の真ん中に乗っていた。
        ------------------------------------------------------------------ */
     section('案内文が型に重ならない (見張り③)');
-    const ctx3 = await browser.newContext({ ...devices[PHONE] });
+    const ctx3 = await browser.newContext({ ...DEVICE });
     const p3 = await ctx3.newPage();
     p3.on('pageerror', (e) => errors.push('見張り③: ' + e.message));
-    await p3.goto(URL);
+    await 開く(p3);
     await p3.waitForTimeout(500);
     ok(!(await p3.evaluate(() => document.getElementById('hint').classList.contains('hidden'))),
       '起動直後は案内文が出ている');
@@ -233,10 +259,10 @@ async function run() {
        ------------------------------------------------------------------ */
     section('結果パネルが潰れない (見張り④)');
     for (const [label] of [[PHONE]]) {
-      const ctxP = await browser.newContext({ ...devices[PHONE] });
+      const ctxP = await browser.newContext({ ...DEVICE });
       const pp = await ctxP.newPage();
       pp.on('pageerror', (e) => errors.push('見張り④: ' + e.message));
-      await pp.goto(URL);
+      await 開く(pp);
       await pp.waitForTimeout(400);
       const m = await pp.evaluate(() => {
         const el = document.getElementById('result');
@@ -292,10 +318,10 @@ async function run() {
        型の中央の高さを横に走査し、外円の右寄りが「外」になることを見る。
        ------------------------------------------------------------------ */
     section('『三日月』が欠けている (見張り⑤)');
-    const ctxM = await browser.newContext({ ...devices[PHONE] });
+    const ctxM = await browser.newContext({ ...DEVICE });
     const pm = await ctxM.newPage();
     pm.on('pageerror', (e) => errors.push('見張り⑤: ' + e.message));
-    await pm.goto(URL);
+    await 開く(pm);
     await pm.waitForFunction(() => window.__app);
     const moon = await pm.evaluate(() => {
       /* アプリが実際に採点へ使う型そのものを測る */
@@ -344,10 +370,10 @@ async function run() {
        すべて #000 かつ全部同色であることを見る。
        ------------------------------------------------------------------ */
     section('背景が真っ黒で固定 (見張り⑥)');
-    const ctxB = await browser.newContext({ ...devices[PHONE] });
+    const ctxB = await browser.newContext({ ...DEVICE });
     const pb = await ctxB.newPage();
     pb.on('pageerror', (e) => errors.push('見張り⑥: ' + e.message));
-    await pb.goto(URL);
+    await 開く(pb);
     await pb.waitForTimeout(600);
     /* 何点か抜き取る見方だと、漂うものがあったときに
        「たまたま当たらなかった」で通ってしまう。画素を全部見る */
@@ -380,10 +406,10 @@ async function run() {
        見張り ⑦: 型ごとに、ひと匙と難易度が形から決まっている
        ------------------------------------------------------------------ */
     section('型ごとのひと匙と難易度 (見張り⑦)');
-    const ctxS = await browser.newContext({ ...devices[PHONE] });
+    const ctxS = await browser.newContext({ ...DEVICE });
     const ps = await ctxS.newPage();
     ps.on('pageerror', (e) => errors.push('見張り⑦: ' + e.message));
-    await ps.goto(URL);
+    await 開く(ps);
     await ps.waitForFunction(() => window.__app);
     const shapes = await ps.evaluate(() => window.__app.SHAPES.map((s) => ({
       name: s.name, area: s.area, budget: s.budget, difficulty: s.difficulty, spillMax: s.spillMax,
@@ -418,10 +444,10 @@ async function run() {
        見張り ⑧: 記録が残り、開き直しても消えない
        ------------------------------------------------------------------ */
     section('記録が残る (見張り⑧)');
-    const ctxR = await browser.newContext({ ...devices[PHONE] });
+    const ctxR = await browser.newContext({ ...DEVICE });
     const pr = await ctxR.newPage();
     pr.on('pageerror', (e) => errors.push('見張り⑧: ' + e.message));
-    await pr.goto(URL);
+    await 開く(pr);
     await pr.waitForFunction(() => window.__app);
     ok(await pr.evaluate(() => window.__app.records.rounds === 0), 'はじめは記録が空');
 
@@ -432,7 +458,7 @@ async function run() {
       r = C.applyResult(r, window.__app.SHAPES[0].name, { rank: '名人', fill: 0.9, spill: 0.1 });
       window.__app.setRecords(r);
     });
-    await pr.reload();
+    await 開き直す(pr);
     await pr.waitForFunction(() => window.__app);
     const kept = await pr.evaluate(() => ({
       rounds: window.__app.records.rounds,
@@ -475,10 +501,10 @@ async function run() {
        離れた場所は1枚も動かないこと、総数が減らない(飛んでいかない)ことを見る。
        ------------------------------------------------------------------ */
     section('払うとそのあたりだけずれる (見張り⑩)');
-    const ctxW = await browser.newContext({ ...devices[PHONE] });
+    const ctxW = await browser.newContext({ ...DEVICE });
     const pw = await ctxW.newPage();
     pw.on('pageerror', (e) => errors.push('見張り⑩: ' + e.message));
-    await pw.goto(URL);
+    await 開く(pw);
     await pw.waitForFunction(() => window.__app);
 
     // 上と下、離れた二か所に蒔く
@@ -540,10 +566,10 @@ async function run() {
        まっさらにする手立てがボタンだけになった。効くことを見張る。
        ------------------------------------------------------------------ */
     section('払うと画面が戻る (見張り⑫)');
-    const ctxC = await browser.newContext({ ...devices[PHONE] });
+    const ctxC = await browser.newContext({ ...DEVICE });
     const pc = await ctxC.newPage();
     pc.on('pageerror', (e) => errors.push('見張り⑫: ' + e.message));
-    await pc.goto(URL);
+    await 開く(pc);
     await pc.waitForFunction(() => window.__app);
 
     await pc.mouse.move(CX, Math.round(V.height * 0.35));
@@ -595,10 +621,10 @@ async function run() {
        ------------------------------------------------------------------ */
     section('操作帯が溢れない (見張り⑪)');
     for (const [label] of [[PHONE]]) {
-      const ctxBar = await browser.newContext({ ...devices[PHONE] });
+      const ctxBar = await browser.newContext({ ...DEVICE });
       const pbar = await ctxBar.newPage();
       pbar.on('pageerror', (e) => errors.push('見張り⑪: ' + e.message));
-      await pbar.goto(URL);
+      await 開く(pbar);
       await pbar.waitForTimeout(400);
       const bar = await pbar.evaluate(() => {
         const el = document.getElementById('bar');
@@ -631,10 +657,10 @@ async function run() {
        残り1型を引くまで何度もやり直すことになる。
        ------------------------------------------------------------------ */
     section('帳から型を選び、記録を消せる (見張り⑬)');
-    const ctxK = await browser.newContext({ ...devices[PHONE] });
+    const ctxK = await browser.newContext({ ...DEVICE });
     const pk = await ctxK.newPage();
     pk.on('pageerror', (e) => errors.push('見張り⑬: ' + e.message));
-    await pk.goto(URL);
+    await 開く(pk);
     await pk.waitForFunction(() => window.__app);
 
     await pk.evaluate(() => {
@@ -684,7 +710,7 @@ async function run() {
     ok(一度目.label.includes('もう一度'), `確かめの表示が出る (${一度目.label})`);
     await pk.click('#btn-book-clear');
     await pk.waitForTimeout(400);
-    await pk.reload();
+    await 開き直す(pk);
     await pk.waitForFunction(() => window.__app);
     ok(await pk.evaluate(() => window.__app.records.rounds === 0),
       '二度押すと消え、開き直しても戻らない');
@@ -698,10 +724,10 @@ async function run() {
        悪くなる向きなので、目で見えないと辛い。
        ------------------------------------------------------------------ */
     section('蒔く目安が出る (見張り⑭)');
-    const ctxG = await browser.newContext({ ...devices[PHONE] });
+    const ctxG = await browser.newContext({ ...DEVICE });
     const pg = await ctxG.newPage();
     pg.on('pageerror', (e) => errors.push('見張り⑭: ' + e.message));
-    await pg.goto(URL);
+    await 開く(pg);
     await pg.waitForFunction(() => window.__app);
     await pg.click('#btn-odai');
     await pg.waitForTimeout(2300);
@@ -757,6 +783,106 @@ async function run() {
       `蒔き始めると目安が消える (線の高さ ${消えた.線の高さ} / 離れた高さ ${消えた.離れた高さ})`);
     await ctxG.close();
 
+    /* ------------------------------------------------------------------
+       見張り ⑮: タイトル画面で金箔がひらひら落ちてきて、触れると遊べる
+
+       ・落ちていること自体を見る(止まっていたら不合格)
+       ・奥行き(ぼけた箔)があること
+       ・文字が画面からはみ出さないこと
+       ・タイトルを触っても、その裏の遊ぶ画面に箔が撒かれないこと
+         (重ねた層が指を通してしまうと、始めた瞬間に箔が散っている)
+       ------------------------------------------------------------------ */
+    section('タイトル画面 (見張り⑮)');
+    const ctxT = await browser.newContext({ ...DEVICE });
+    const pt = await ctxT.newPage();
+    pt.on('pageerror', (e) => errors.push('見張り⑮: ' + e.message));
+    await pt.goto(URL);
+    await pt.waitForSelector('#title-screen');
+    await pt.waitForFunction(() => window.__app && window.__app.isTitleUp());
+
+    const 題 = await pt.evaluate(() => {
+      const el = document.getElementById('title-main');
+      const b = el.getBoundingClientRect();
+      return {
+        文字: el.textContent.trim(),
+        はみ出し: b.left < 0 || b.right > innerWidth || b.top < 0 || b.bottom > innerHeight,
+        層: window.__app.titleFlakes.length,
+        ぼけ: window.__app.titleFlakes.filter((f) => f.bokeh).length,
+      };
+    });
+    ok(題.文字 === '金箔ひらひら', `題字が「金箔ひらひら」(${題.文字})`);
+    ok(!題.はみ出し, '題字が画面からはみ出さない');
+
+    /* 縦に積んだ字が、1字ずつ離れて並んでいるか。
+       writing-mode まかせで組むと、フォントによっては漢字の送りが 0 で返り、
+       「金」と「箔」が同じ場所に重なって刷られる。箱がはみ出してはいないので、
+       はみ出しの見張りでは捕まらない */
+    const 字送り = await pt.evaluate(() => {
+      const el = document.getElementById('title-main');
+      const boxes = [...el.children].map((sp) => {
+        const b = sp.getBoundingClientRect();
+        return { 字: sp.textContent, top: b.top, 高さ: b.height };
+      });
+      const 送り = [];
+      for (let i = 1; i < boxes.length; i++) 送り.push(boxes[i].top - boxes[i - 1].top);
+      return {
+        字数: boxes.length,
+        重なり: 送り.filter((d, i) => d < boxes[i].高さ * 0.8).length,
+        最小: Math.min(...送り), 最大: Math.max(...送り),
+        字の高さ: boxes[0].高さ,
+      };
+    });
+    ok(字送り.字数 === 6 && 字送り.重なり === 0,
+      `題字の6字が重ならずに並ぶ (字の高さ ${字送り.字の高さ.toFixed(0)}px / 送り ${字送り.最小.toFixed(0)}〜${字送り.最大.toFixed(0)}px)`);
+    ok(字送り.最大 - 字送り.最小 < 2,
+      `字の間隔がそろっている (ばらつき ${(字送り.最大 - 字送り.最小).toFixed(1)}px)`);
+    ok(題.ぼけ > 0 && 題.層 > 題.ぼけ,
+      `奥のぼけた箔と手前の箔が両方ある (全${題.層}枚 うちぼけ${題.ぼけ}枚)`);
+
+    // 実際に落ちているか: 0.6 秒の間にどれだけ下がったか
+    const 前 = await pt.evaluate(() => window.__app.titleFlakes.map((f) => f.y));
+    await pt.waitForTimeout(600);
+    const 後 = await pt.evaluate(() => window.__app.titleFlakes.map((f) => f.y));
+    let 落ちた = 0;
+    let 総移動 = 0;
+    for (let i = 0; i < 前.length; i++) {
+      const d = 後[i] - 前[i];
+      if (d > 0) { 落ちた++; 総移動 += d; }   // 上へ戻った箔(一周した)は数えない
+    }
+    ok(落ちた >= 前.length * 0.8,
+      `金箔がひらひら落ちてくる (${落ちた}/${前.length}枚が下がった 平均 ${(総移動 / Math.max(落ちた, 1)).toFixed(1)}px)`);
+
+    // 金色がちゃんと見えている
+    const 金 = await pt.evaluate(() => {
+      const cv = document.getElementById('titlecv');
+      const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i] > 120 && d[i] > d[i + 2] + 30) n++;
+      return n;
+    });
+    ok(金 > 300, `タイトルの箔が見えている (${金} 画素)`);
+
+    // 触れると遊ぶ画面へ。その一触りで箔が撒かれていないこと
+    await pt.mouse.move(CX, Math.round(V.height * 0.5));
+    await pt.mouse.down();
+    await pt.waitForTimeout(80);
+    await pt.mouse.up();
+    await pt.waitForSelector('#title-screen.off', { state: 'attached', timeout: 3000 });
+    await pt.waitForTimeout(600);
+    ok(!(await pt.evaluate(() => window.__app.isTitleUp())), '触れるとタイトルが閉じる');
+    const 撒かれた = await countFlakes(pt, { x0: 0, y0: 0, x1: V.width, y1: V.height });
+    ok(撒かれた === 0, `タイトルを触っても遊ぶ画面に箔が落ちていない (${撒かれた} 画素)`);
+
+    // 閉じたあとは、ふつうに蒔ける
+    await pt.mouse.move(CX, Math.round(V.height * 0.35));
+    await pt.mouse.down();
+    await pt.waitForTimeout(150);
+    await pt.mouse.up();
+    await pt.waitForTimeout(1500);
+    const 蒔けた = await countFlakes(pt, { x0: 0, y0: 0, x1: V.width, y1: V.height });
+    ok(蒔けた > 200, `閉じたあとは蒔ける (${蒔けた} 画素)`);
+    await ctxT.close();
+
     // ------------------------------------------------ アイコン
     section('アイコン');
     const apple = await phone.evaluate(() =>
@@ -771,10 +897,10 @@ async function run() {
        HTML だけはネットワーク優先にしてあること。
        ------------------------------------------------------------------ */
     section('更新とオフライン (見張り②)');
-    const swCtx = await browser.newContext({ ...devices[PHONE] });
+    const swCtx = await browser.newContext({ ...DEVICE });
     const swPage = await swCtx.newPage();
     swPage.on('pageerror', (e) => errors.push('更新: ' + e.message));
-    await swPage.goto(URL);
+    await 開く(swPage);
     await swPage.waitForFunction(() => navigator.serviceWorker.controller !== null, null, { timeout: 15000 });
     ok(true, 'サービスワーカーが動く');
 

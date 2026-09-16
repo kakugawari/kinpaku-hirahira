@@ -233,6 +233,64 @@
     pointer-events: none;
   }
   #toast.show { opacity: 1; }
+
+  /* ===== タイトル画面 =====
+     遊ぶ前のひと呼吸。金箔がひらひら落ちてくるところだけを見せる。
+     遊ぶ画面は真っ黒に保ちたいので、奥行き(ぼけた箔)はここに置く */
+  #title-screen {
+    position: fixed; inset: 0;
+    z-index: 50;
+    display: flex; align-items: center; justify-content: center;
+    /* 中央のほのかな照り。Canvas に毎フレーム塗ると、CPU を4倍遅くした
+       端末で 1コマ 33ms を食って 20fps まで落ちた。敷きっぱなしで済む
+       ものは CSS の背景に置き、Canvas は箔だけを描く */
+    background:
+      radial-gradient(circle at 50% 45%,
+        rgba(150,112,40,0.17) 0%,
+        rgba(110,80,28,0.06) 46%,
+        rgba(0,0,0,0) 72%),
+      #000000;
+    transition: opacity 0.5s ease;
+  }
+  #title-screen.gone { opacity: 0; pointer-events: none; }
+  #title-screen.off  { display: none; }
+  #titlecv { position: absolute; inset: 0; }
+
+  #title-inner {
+    position: relative;            /* 落ちてくる箔より前に出す */
+    display: flex; flex-direction: column; align-items: center;
+    gap: 30px;
+    padding: calc(20px + env(safe-area-inset-top, 0px)) 16px
+             calc(20px + env(safe-area-inset-bottom, 0px));
+    pointer-events: none;          /* 触れたら始まる。文字が邪魔をしない */
+    text-align: center;
+  }
+  #title-main {
+    /* 縦書き。writing-mode で組むと、字の送りをフォント任せにすることになり、
+       手もとで測ったら漢字の送りが 0 で返って「金」と「箔」が重なった。
+       1字ずつ箱に入れて積めば、どのフォントでも同じ間隔で並ぶ */
+    display: flex; flex-direction: column; align-items: center;
+    flex: 0 0 auto;
+    font-size: 46px; line-height: 1.24; letter-spacing: 0;
+    /* 金の照りは、文字を型抜きしたグラデーションで出す */
+    background: linear-gradient(to bottom, #f7e9b0 0%, #e2c168 34%, #b8862f 68%, #f0d878 100%);
+    -webkit-background-clip: text; background-clip: text;
+    color: transparent; -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 0 16px rgba(201,162,75,0.35));
+  }
+  #title-sub {
+    color: rgba(224,200,144,0.62);
+    font-size: 13px; letter-spacing: 0.32em;
+  }
+  #title-start {
+    color: rgba(230,210,170,0.5);
+    font-size: 12px; letter-spacing: 0.3em;
+    animation: titlebreath 3.2s ease-in-out infinite;
+  }
+  @keyframes titlebreath {
+    0%, 100% { opacity: 0.28; }
+    50%      { opacity: 0.85; }
+  }
 </style>
 </head>
 <body>
@@ -274,6 +332,16 @@
 </div>
 
 <div id="toast"></div>
+
+<!-- タイトル画面:触れると遊ぶ画面へ -->
+<div id="title-screen">
+  <canvas id="titlecv"></canvas>
+  <div id="title-inner">
+    <div id="title-main"><span>金</span><span>箔</span><span>ひ</span><span>ら</span><span>ひ</span><span>ら</span></div>
+    <div id="title-sub">金箔を、ひとひら。</div>
+    <div id="title-start">画面に触れて はじめる</div>
+  </div>
+</div>
 
 <!-- 記録の帳 -->
 <div id="book">
@@ -1273,6 +1341,150 @@ function drawBackground(c) {
 }
 
 /* ============================================================
+   タイトル画面
+   ------------------------------------------------------------
+   金箔がひらひら落ちてくるところだけを見せる。触れると遊ぶ画面へ。
+
+   ・動きは参考コードの作りをそのまま使う:落ちる速さ・横揺れ(sinと位相)・
+     回転・ゆっくり吹く風(乱数歩行を0.995で減らす)を、箔ごとに個体差つきで持たせる
+   ・奥行きは三層。奥の箔はぼかして小さく遅く、手前ははっきり大きく速く
+   ・ぼけは毎フレーム ctx.filter=blur() を掛けると一気にコマ落ちするので、
+     あらかじめ描いた柔らかい丸を拡大して使う
+   ・タイトルが出ている間はメインループの描画を止める(遊ぶ画面は隠れている)
+   ============================================================ */
+const titleEl    = document.getElementById("title-screen");
+const titleCv    = document.getElementById("titlecv");
+const titleCtx   = titleCv.getContext("2d");
+let titleUp = true;
+
+/* 奥のぼけ玉のもと:中心が明るく、外へ向かって溶ける丸 */
+const bokehSprite = document.createElement("canvas");
+bokehSprite.width = bokehSprite.height = 64;
+{
+  const bc = bokehSprite.getContext("2d");
+  const g = bc.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0,    "rgba(255,238,186,0.95)");
+  g.addColorStop(0.35, "rgba(226,193,104,0.55)");
+  g.addColorStop(0.72, "rgba(184,134,47,0.18)");
+  g.addColorStop(1,    "rgba(184,134,47,0)");
+  bc.fillStyle = g;
+  bc.fillRect(0, 0, 64, 64);
+}
+
+const TITLE_GOLD = ["#f0d878", "#e8c15a", "#d4a944", "#c69436", "#f7e9b0"];
+
+/* 三層。depth は 0(遠く)〜1(手前) */
+const TITLE_LAYERS = [
+  { n: 14, depth: 0.26, bokeh: true  },
+  { n: 18, depth: 0.62, bokeh: false },
+  { n: 14, depth: 1.00, bokeh: false },
+];
+
+const titleFlakes = [];
+let titleWind = 0;
+
+function makeTitleFlake(layer, y) {
+  const d = layer.depth;
+  const size = (1.6 + Math.random() * 4.4) * (0.45 + d * 0.9);
+  const verts = [];
+  for (let i = 0; i < 4; i++) {
+    const a = (Math.PI / 2) * i + (Math.random() - 0.5) * 0.7;
+    const r = size * (0.6 + Math.random() * 0.5);
+    verts.push([Math.cos(a) * r, Math.sin(a) * r]);
+  }
+  return {
+    depth: d, bokeh: layer.bokeh, size, verts,
+    x: Math.random() * (W + 60) - 30,
+    y,
+    speed: (0.22 + Math.random() * 0.45) * (0.35 + d * 1.1),  /* 1フレームあたりpx */
+    swayAmp: (0.25 + Math.random() * 0.75) * (0.4 + d * 0.8), /* 横揺れの幅 */
+    swaySpeed: 0.016 + Math.random() * 0.03,
+    phase: Math.random() * Math.PI * 2,
+    rot: Math.random() * Math.PI * 2,
+    rotSpeed: (Math.random() - 0.5) * 0.05 * (0.4 + d),
+    facePhase: Math.random() * Math.PI * 2,
+    faceRate: 0.03 + Math.random() * 0.06,
+    color: TITLE_GOLD[(Math.random() * TITLE_GOLD.length) | 0],
+  };
+}
+
+/* 開いた瞬間から降っているように、最初は画面じゅうに散らしておく */
+function seedTitleFlakes() {
+  titleFlakes.length = 0;
+  for (const layer of TITLE_LAYERS) {
+    for (let i = 0; i < layer.n; i++) {
+      titleFlakes.push(makeTitleFlake(layer, Math.random() * (H + 80) - 40));
+    }
+  }
+}
+
+function resizeTitle() {
+  titleCv.width  = W * DPR; titleCv.height = H * DPR;
+  titleCv.style.width = W + "px"; titleCv.style.height = H + "px";
+  titleCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+resizeTitle();
+seedTitleFlakes();
+window.addEventListener("resize", () => {
+  resizeTitle();
+  if (titleUp) seedTitleFlakes();
+});
+
+function drawTitle(dt) {
+  const k = Math.min(dt, 0.05) * 60;      /* 60fps を1とした歩幅 */
+
+  /* ゆっくり向きの変わる風。乱数歩行に減衰をかけて、たまに横へ流す */
+  titleWind += (Math.random() - 0.5) * 0.02 * k;
+  titleWind *= Math.pow(0.995, k);
+
+  for (const f of titleFlakes) {
+    f.phase     += f.swaySpeed * k;
+    f.rot       += f.rotSpeed * k;
+    f.facePhase += f.faceRate * k;
+    f.y += f.speed * k;
+    f.x += (Math.sin(f.phase) * f.swayAmp + titleWind * f.depth * 2.2) * k;
+    /* 下まで落ちたら、また上から。横に流れ切ったときも戻す */
+    if (f.y > H + 40 || f.x < -40 || f.x > W + 40) {
+      f.y = -20 - Math.random() * 60;
+      f.x = Math.random() * (W + 60) - 30;
+    }
+  }
+
+  /* 背景(黒と照り)は CSS 側。ここは消して箔だけ描く */
+  titleCtx.clearRect(0, 0, W, H);
+
+  for (const f of titleFlakes) {
+    if (f.bokeh) {
+      /* 奥:ピントの外れた光の玉。輪郭を描かず、拡大した丸で済ませる */
+      const r = f.size * 3.4;
+      titleCtx.globalAlpha = 0.16 + Math.sin(f.facePhase) * 0.05;
+      titleCtx.drawImage(bokehSprite, f.x - r, f.y - r, r * 2, r * 2);
+      continue;
+    }
+    const face   = Math.sin(f.facePhase);
+    const yScale = Math.abs(face) * 0.85 + 0.15;   /* 横を向くと細く見える */
+    titleCtx.save();
+    titleCtx.translate(f.x, f.y);
+    titleCtx.rotate(f.rot);
+    titleCtx.fillStyle = f.color;
+    titleCtx.globalAlpha = (0.4 + Math.abs(face) * 0.6) * (0.45 + f.depth * 0.55);
+    drawPoly(titleCtx, f.verts, yScale);
+    titleCtx.restore();
+  }
+  titleCtx.globalAlpha = 1;
+}
+
+/* 触れたら遊ぶ画面へ。薄れ切ってから display:none にして、
+   消えたあとの一枚が指の邪魔をしないようにする */
+function dismissTitle() {
+  if (!titleUp) return;
+  titleUp = false;
+  titleEl.classList.add("gone");
+  setTimeout(() => titleEl.classList.add("off"), 520);
+}
+titleEl.addEventListener("pointerdown", (e) => { e.preventDefault(); dismissTitle(); });
+
+/* ============================================================
    メインループ
    ============================================================ */
 let lastT = performance.now();
@@ -1280,6 +1492,15 @@ let lastT = performance.now();
 function frame(now) {
   const dt = Math.min((now - lastT) / 1000, 0.05);  /* タブ復帰時の暴走防止 */
   lastT = now;
+
+  /* タイトルが出ている間は、その裏の遊ぶ画面を描かない。
+     見えていない絵に毎フレーム全画面ぶんの合成を掛けると、
+     遅い端末でタイトルの箔がかくつく */
+  if (titleUp) {
+    drawTitle(dt);
+    requestAnimationFrame(frame);
+    return;
+  }
 
   /* --- 長押し中は撒き続ける(押している時間で少しずつ勢いが増す) --- */
   if (pointer.down) {
@@ -1383,6 +1604,9 @@ window.__app = {
   flakes, settled, sliding, sparkles, odai, SHAPES,
   Core,
   slidePush, PUSH_RADIUS, SETTLE_MIN, SETTLE_SPAN,
+  titleFlakes,
+  isTitleUp() { return titleUp; },
+  dismissTitle,
   get records() { return records; },
   setRecords(r) { records = Core.reviveRecords(r); saveRecords(); },
   /* 積もった箔だけを写し取る。きらめきや舞っている箔、型の輪郭が
