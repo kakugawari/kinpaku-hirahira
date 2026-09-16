@@ -735,29 +735,36 @@ async function run() {
     /* ボケの箔が漂うようになったので、1点だけ見ると当たり外れが出る。
        線のある高さと、離れた高さを、横一列ならして比べる */
     await pg.addScriptTag({ content: `
-      window.__横ならし = (py) => {
+      /* px0/px1 で横の範囲を絞れる。指で蒔いた所を混ぜて測ると、
+         積もった箔の明るさで「線が消えた」判定が揺れる */
+      window.__横ならし = (py, px0 = 0, px1 = innerWidth) => {
         const cv = document.getElementById('cv');
         const c = cv.getContext('2d');
         const s = cv.width / innerWidth;
         const y = Math.round(py * s);
-        const d = c.getImageData(0, y, cv.width, 1).data;
+        const x = Math.round(px0 * s);
+        const w = Math.max(1, Math.round((px1 - px0) * s));
+        const d = c.getImageData(x, y, w, 1).data;
         let 和 = 0, n = 0;
         for (let i = 0; i < d.length; i += 4) { 和 += d[i]; n++; }
         return 和 / n;
       };
     ` });
-    const 目安 = await pg.evaluate(() => {
+    /* 指は左 (幅の15%) で蒔くので、測るのは右半分。
+       蒔く前と後で同じ所を測らないと、比べたことにならない */
+    const 右半分 = [V.width * 0.55, V.width];
+    const 目安 = await pg.evaluate(([x0, x1]) => {
       const o = window.__app.odai;
       const 平均落下 = window.__app.SETTLE_MIN + window.__app.SETTLE_SPAN / 2;
       const y = (o.bounds.top + o.bounds.bottom) / 2 - 平均落下;
       return {
         y: Math.round(y),
-        線の高さ: +window.__横ならし(y).toFixed(1),
-        離れた高さ: +window.__横ならし(y - 120).toFixed(1),
+        線の高さ: +window.__横ならし(y, x0, x1).toFixed(1),
+        離れた高さ: +window.__横ならし(y - 120, x0, x1).toFixed(1),
         型の上端: Math.round(o.bounds.top),
         画面内: y > 0 && y < innerHeight,
       };
-    });
+    }, 右半分);
     ok(目安.画面内, `目安が画面の中に出る (y=${目安.y})`);
     ok(目安.線の高さ > 目安.離れた高さ + 8,
       `目安の線が光っている (線の高さ ${目安.線の高さ} / 離れた高さ ${目安.離れた高さ})`);
@@ -770,14 +777,14 @@ async function run() {
     await pg.waitForTimeout(120);
     await pg.mouse.up();
     await pg.waitForTimeout(400);
-    const 消えた = await pg.evaluate(() => {
+    const 消えた = await pg.evaluate(([x0, x1]) => {
       const o = window.__app.odai;
       const y = (o.bounds.top + o.bounds.bottom) / 2 - (window.__app.SETTLE_MIN + window.__app.SETTLE_SPAN / 2);
       return {
-        線の高さ: +window.__横ならし(y).toFixed(1),
-        離れた高さ: +window.__横ならし(y - 120).toFixed(1),
+        線の高さ: +window.__横ならし(y, x0, x1).toFixed(1),
+        離れた高さ: +window.__横ならし(y - 120, x0, x1).toFixed(1),
       };
-    });
+    }, 右半分);
     /* 線が消えていれば、線のあった高さと離れた高さの差がほとんど無くなる */
     ok(消えた.線の高さ < 消えた.離れた高さ + 8,
       `蒔き始めると目安が消える (線の高さ ${消えた.線の高さ} / 離れた高さ ${消えた.離れた高さ})`);
@@ -786,9 +793,11 @@ async function run() {
     /* ------------------------------------------------------------------
        見張り ⑮: タイトル画面で金箔がひらひら落ちてきて、触れると遊べる
 
+       ・題字の絵が届いて、画面をすきま無く覆っていること
        ・落ちていること自体を見る(止まっていたら不合格)
        ・奥行き(ぼけた箔)があること
-       ・文字が画面からはみ出さないこと
+       ・案内の文字が、絵の暗いところに乗っていること
+         (光る水面に重ねると読めない)
        ・タイトルを触っても、その裏の遊ぶ画面に箔が撒かれないこと
          (重ねた層が指を通してしまうと、始めた瞬間に箔が散っている)
        ------------------------------------------------------------------ */
@@ -800,46 +809,66 @@ async function run() {
     await pt.waitForSelector('#title-screen');
     await pt.waitForFunction(() => window.__app && window.__app.isTitleUp());
 
-    const 題 = await pt.evaluate(() => {
-      const el = document.getElementById('title-main');
-      const b = el.getBoundingClientRect();
+    const 絵 = await pt.evaluate(() => {
+      const img = document.getElementById('title-art');
+      const b = img.getBoundingClientRect();
       return {
-        文字: el.textContent.trim(),
-        はみ出し: b.left < 0 || b.right > innerWidth || b.top < 0 || b.bottom > innerHeight,
+        読み: img.alt,
+        届いた: img.complete && img.naturalWidth > 0,
+        元の大きさ: img.naturalWidth + 'x' + img.naturalHeight,
+        すきま: Math.round(Math.max(b.top, b.left, innerWidth - b.right, innerHeight - b.bottom)),
         層: window.__app.titleFlakes.length,
         ぼけ: window.__app.titleFlakes.filter((f) => f.bokeh).length,
       };
     });
-    ok(題.文字 === '金箔ひらひら', `題字が「金箔ひらひら」(${題.文字})`);
-    ok(!題.はみ出し, '題字が画面からはみ出さない');
+    ok(絵.届いた, `題字の絵が届いている (${絵.元の大きさ})`);
+    ok(絵.読み === '金箔ひらひら', `絵の読みが「金箔ひらひら」(${絵.読み})`);
+    ok(絵.すきま <= 0, `絵が画面をすきま無く覆う (はみ出し/すきま ${絵.すきま}px)`);
+    ok(絵.ぼけ > 0 && 絵.層 > 絵.ぼけ,
+      `奥のぼけた箔と手前の箔が両方ある (全${絵.層}枚 うちぼけ${絵.ぼけ}枚)`);
 
-    /* 縦に積んだ字が、1字ずつ離れて並んでいるか。
-       writing-mode まかせで組むと、フォントによっては漢字の送りが 0 で返り、
-       「金」と「箔」が同じ場所に重なって刷られる。箱がはみ出してはいないので、
-       はみ出しの見張りでは捕まらない */
-    const 字送り = await pt.evaluate(() => {
-      const el = document.getElementById('title-main');
-      const boxes = [...el.children].map((sp) => {
-        const b = sp.getBoundingClientRect();
-        return { 字: sp.textContent, top: b.top, 高さ: b.height };
-      });
-      const 送り = [];
-      for (let i = 1; i < boxes.length; i++) 送り.push(boxes[i].top - boxes[i - 1].top);
+    /* 絵が本当に写っているか、そして案内の文字が読める暗さの所に
+       置かれているか。下端に置くと、光る水面に重なって消える */
+    const 下地 = await pt.evaluate(() => {
+      const img = document.getElementById('title-art');
+      const cv = document.createElement('canvas');
+      cv.width = innerWidth; cv.height = innerHeight;
+      const c = cv.getContext('2d');
+      // object-fit: cover と同じ当て方で貼る
+      const k = Math.max(innerWidth / img.naturalWidth, innerHeight / img.naturalHeight);
+      const dw = img.naturalWidth * k, dh = img.naturalHeight * k;
+      c.drawImage(img, (innerWidth - dw) / 2, (innerHeight - dh) / 2, dw, dh);
+      const 明るさ = (x, y, w, h) => {
+        const d = c.getImageData(Math.round(x), Math.round(y), Math.round(w), Math.round(h)).data;
+        let a = 0;
+        for (let i = 0; i < d.length; i += 4) a += (d[i] + d[i + 1] + d[i + 2]) / 3;
+        return +(a / (d.length / 4)).toFixed(1);
+      };
+      let 金 = 0;
+      const all = c.getImageData(0, 0, cv.width, cv.height).data;
+      for (let i = 0; i < all.length; i += 4) if (all[i] > 120 && all[i] > all[i + 2] + 30) 金++;
+      const b = document.getElementById('title-start').getBoundingClientRect();
       return {
-        字数: boxes.length,
-        重なり: 送り.filter((d, i) => d < boxes[i].高さ * 0.8).length,
-        最小: Math.min(...送り), 最大: Math.max(...送り),
-        字の高さ: boxes[0].高さ,
+        金,
+        案内の下地: 明るさ(b.left, b.top, b.width, b.height),
+        下端の下地: 明るさ(innerWidth * 0.1, innerHeight - 40, innerWidth * 0.8, 30),
       };
     });
-    ok(字送り.字数 === 6 && 字送り.重なり === 0,
-      `題字の6字が重ならずに並ぶ (字の高さ ${字送り.字の高さ.toFixed(0)}px / 送り ${字送り.最小.toFixed(0)}〜${字送り.最大.toFixed(0)}px)`);
-    ok(字送り.最大 - 字送り.最小 < 2,
-      `字の間隔がそろっている (ばらつき ${(字送り.最大 - 字送り.最小).toFixed(1)}px)`);
-    ok(題.ぼけ > 0 && 題.層 > 題.ぼけ,
-      `奥のぼけた箔と手前の箔が両方ある (全${題.層}枚 うちぼけ${題.ぼけ}枚)`);
+    ok(下地.金 > 10000, `絵に金箔が写っている (${下地.金} 画素)`);
+    ok(下地.案内の下地 < 70,
+      `案内の文字が暗いところに乗っている (下地の明るさ ${下地.案内の下地} / 画面下端なら ${下地.下端の下地})`);
 
-    // 実際に落ちているか: 0.6 秒の間にどれだけ下がったか
+    /* 実際に落ちているか: 0.6 秒の間にどれだけ下がったか。
+
+       測る前に、この画面を前に出して動き出すのを待つ。ブラウザは
+       見えていない画面の requestAnimationFrame を止めるので、他の
+       テストの画面が前に居ると、箔が1枚も動かないまま 0px と出る
+       (3回に1回ほど、ここだけが落ちていた) */
+    await pt.bringToFront();
+    await pt.evaluate(() => { window.__いま = window.__app.titleFlakes.map((f) => f.y); });
+    await pt.waitForFunction(
+      () => window.__app.titleFlakes.some((f, i) => f.y !== window.__いま[i]),
+      null, { polling: 50, timeout: 5000 });
     const 前 = await pt.evaluate(() => window.__app.titleFlakes.map((f) => f.y));
     await pt.waitForTimeout(600);
     const 後 = await pt.evaluate(() => window.__app.titleFlakes.map((f) => f.y));

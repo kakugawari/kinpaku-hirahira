@@ -4,7 +4,7 @@
    - アイコンなどの変わらない物はキャッシュ優先で即表示
    - 更新時はキャッシュ名(バージョン)を変えると古い物を掃除
    ============================================================ */
-const CACHE_NAME = "kinpaku-hirahira-v5";
+const CACHE_NAME = "kinpaku-hirahira-v6";
 
 const ASSETS = [
   "./",
@@ -15,6 +15,7 @@ const ASSETS = [
   "./icon-512.png",
   "./icon-512-maskable.png",
   "./apple-touch-icon.png",
+  "./title.jpg",
 ];
 
 /* インストール:必要なファイルを先読みキャッシュ */
