@@ -1122,11 +1122,53 @@ async function run() {
     ok(収まり.いちばん下の文字 <= 収まり.画面 - 8,
       `いちばん下の文字が切れない (文字の下端 ${収まり.いちばん下の文字} / 画面 ${収まり.画面})`);
 
-    /* 上の帯(時計やダイナミックアイランド)の下から始めてもらう指定 */
-    const 上の帯 = await pv.evaluate(() =>
-      document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]').content);
-    ok(上の帯 === 'black',
-      `画面を上の帯の下から始める指定になっている (${上の帯})`);
+    /* ------------------------------------------------------------------
+       全画面のものは vh で高さを取る
+
+       ホーム画面から開くと、iOS が渡す「割合の高さ」は上の安全域ぶん
+       足りない。実機で測った値:
+         描ける 430x873 / %873 / dvh873 / 見え873
+         端末 430x932 / vh932 / lvh932 / 外932
+       ウェブ画面そのものは 932 あるのに、% と fixed は 873 で止まる。
+       だから全画面のものは vh で取り、根っこ(932)の中に置く。
+
+       手もとのブラウザでは vh と innerHeight が同じなので、この違いは
+       出ない。書き方そのものを見るしかない。
+       ------------------------------------------------------------------ */
+    const 書き方 = await pv.evaluate(() => {
+      const 探す = (選択子) => {
+        for (const sh of document.styleSheets) {
+          for (const r of sh.cssRules) {
+            if (r.selectorText === 選択子) return r.style;
+          }
+        }
+        return null;
+      };
+      const 根 = 探す('html, body');
+      return {
+        根の高さ: 根 ? 根.height : '(見つからない)',
+        帯: (探す('#bar') || {}).position,
+        覆い: (探す('#title-screen') || {}).position,
+        上の帯: document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]').content,
+        画布の高さ: Math.round(document.getElementById('cv').getBoundingClientRect().height),
+        vh: (() => {
+          const d = document.createElement('div');
+          d.style.cssText = 'position:absolute;left:0;top:0;width:0;height:100vh;visibility:hidden;';
+          document.body.appendChild(d);
+          const h = Math.round(d.getBoundingClientRect().height);
+          d.remove();
+          return h;
+        })(),
+      };
+    });
+    ok(/vh$/.test(書き方.根の高さ),
+      `根っこの高さを vh で取っている (height: ${書き方.根の高さ})`);
+    ok(書き方.帯 === 'absolute' && 書き方.覆い === 'absolute',
+      `全画面のものが根っこの中に置かれている (帯 ${書き方.帯} / 覆い ${書き方.覆い})`);
+    ok(書き方.画布の高さ === 書き方.vh,
+      `蒔ける面も vh の高さ (画布 ${書き方.画布の高さ} / 100vh ${書き方.vh})`);
+    ok(書き方.上の帯 === 'black-translucent',
+      `上の帯の裏まで絵を見せる指定 (${書き方.上の帯})`);
     await ctxV.close();
 
     // ------------------------------------------------ アイコン

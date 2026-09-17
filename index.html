@@ -13,18 +13,23 @@
 <!-- iOS: ホーム画面追加用 -->
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<!-- black-translucent にすると、iOS はウェブ画面を「画面の高さ − 上の安全域」
-     (430x873) で作り、それを画面のいちばん上に置く。中身は上から並ぶので、
-     下に 59pt の描けない帯が残る。下へずらしても、そこはウェブ画面の外なので
-     文字が切れるだけだった。black にして、上の帯の下から始めてもらう -->
-<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<!-- 時計やダイナミックアイランドの裏まで絵を見せる。
+     black に変えても、iOS はホーム画面に追加したときの設定を覚えているので
+     効かなかった(実機で 位置0 のまま)。下まで届かせるのは vh で行う -->
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="金箔ひらひら">
 <style>
   /* ===== 全体:漆器の質感を意識した黒基調 ===== */
   html, body {
     margin: 0; padding: 0;
-    width: 100%; height: 100%;
+    width: 100%;
+    /* ホーム画面から開くと、iOS の渡す高さ(% や innerHeight)は上の安全域ぶん
+       足りない。実機で 描ける873 / %873 なのに vh932 / 外932。
+       ウェブ画面そのものは 932 あるので、高さは vh で取る */
+    height: 100%;
+    height: 100vh;
     overflow: hidden;
+    position: relative;
     background: #000000;
     touch-action: none;            /* スクロール等のブラウザ既定動作を無効化 */
     -webkit-user-select: none; user-select: none;
@@ -49,7 +54,8 @@
      箔も道具も「絵 + 名前」の縦並びで揃える。
      いま選んでいる箔は、輪の光と名前の下の線で示す ===== */
   #bar {
-    position: fixed; bottom: 0; left: 0; right: 0;
+    /* 同じ理由で absolute。根っこの下端(=画面の下)に着く */
+    position: absolute; bottom: 0; left: 0; right: 0;
     display: flex; align-items: flex-end; justify-content: center;
     gap: 7px;
     padding: 12px 8px calc(10px + env(safe-area-inset-bottom, 0px));
@@ -313,7 +319,8 @@
      題字ごと描かれた一枚絵を敷き、その上から金箔を降らせる。
      遊ぶ画面は真っ黒に保ちたいので、雰囲気づくりはここに寄せる */
   #title-screen {
-    position: fixed; inset: 0;
+    /* fixed だと「割合の高さ(873)」で止まる。根っこ(932)の中に置く */
+    position: absolute; inset: 0;
     z-index: 50;
     display: flex; align-items: flex-end; justify-content: center;
     background: #000000;          /* 絵が届くまでの下地 */
@@ -490,6 +497,17 @@ const baseCtx = baseCv.getContext("2d");
 let W = 0, H = 0, DPR = 1;
 
 /* ----- 端末解像度に合わせてCanvasを設定(リサイズ時は積もった箔を引き継ぐ) ----- */
+/* 画面の高さ。ホーム画面から開くと innerHeight は上の安全域ぶん足りないので、
+   100vh を実際に測って、大きい方を使う(実機で innerHeight 873 / 100vh 932) */
+function 画面の高さ() {
+  const 箱 = document.createElement("div");
+  箱.style.cssText = "position:absolute;left:0;top:0;width:0;height:100vh;visibility:hidden;";
+  document.body.appendChild(箱);
+  const h = Math.round(箱.getBoundingClientRect().height);
+  箱.remove();
+  return Math.max(window.innerHeight, h || 0);
+}
+
 function resize() {
   const oldW = sedCv.width, oldH = sedCv.height;
   let old = null;
@@ -500,7 +518,7 @@ function resize() {
     old.getContext("2d").drawImage(sedCv, 0, 0);
   }
   DPR = Math.min(window.devicePixelRatio || 1, 2);
-  W = window.innerWidth; H = window.innerHeight;
+  W = window.innerWidth; H = 画面の高さ();
   cv.width  = W * DPR; cv.height  = H * DPR;
   cv.style.width = W + "px"; cv.style.height = H + "px";
   sedCv.width = W * DPR; sedCv.height = H * DPR;
