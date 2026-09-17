@@ -22,14 +22,12 @@
   /* ===== 全体:漆器の質感を意識した黒基調 ===== */
   html, body {
     margin: 0; padding: 0;
-    width: 100%;
-    /* ホーム画面から開くと、iOS の渡す高さ(% や innerHeight)は上の安全域ぶん
-       足りない。実機で 描ける873 / %873 なのに vh932 / 外932。
-       ウェブ画面そのものは 932 あるので、高さは vh で取る */
-    height: 100%;
-    height: 100vh;
+    width: 100%; height: 100%;
+    /* 根っこに overflow:hidden があると、渡された高さ(873)より下は
+       切り取られる。そこへ置き場を伸ばしても文字が消えるだけだった。
+       画面の下まで見せたいものは「根っこの背景」に敷く(背景だけは
+       切り取られず、ウェブ画面いっぱいに塗られる) */
     overflow: hidden;
-    position: relative;
     background: #000000;
     touch-action: none;            /* スクロール等のブラウザ既定動作を無効化 */
     -webkit-user-select: none; user-select: none;
@@ -54,11 +52,13 @@
      箔も道具も「絵 + 名前」の縦並びで揃える。
      いま選んでいる箔は、輪の光と名前の下の線で示す ===== */
   #bar {
-    /* 同じ理由で absolute。根っこの下端(=画面の下)に着く */
-    position: absolute; bottom: 0; left: 0; right: 0;
+    position: fixed; bottom: 0; left: 0; right: 0;
     display: flex; align-items: flex-end; justify-content: center;
     gap: 7px;
-    padding: 12px 8px calc(10px + env(safe-area-inset-bottom, 0px));
+    /* ホームバーに掛からないための余白。ただし、ウェブ画面の下端が
+       ホームバーまで届いていなければ要らない(実機では 873 で終わり、
+       ホームバーは 898 から。34pt ぶん無駄に空いていた) */
+    padding: 12px 8px calc(10px + var(--下の余白, env(safe-area-inset-bottom, 0px)));
     background: linear-gradient(to top, rgba(0,0,0,0.92) 45%, rgba(0,0,0,0));
   }
   .swatch, .tool {
@@ -319,8 +319,7 @@
      題字ごと描かれた一枚絵を敷き、その上から金箔を降らせる。
      遊ぶ画面は真っ黒に保ちたいので、雰囲気づくりはここに寄せる */
   #title-screen {
-    /* fixed だと「割合の高さ(873)」で止まる。根っこ(932)の中に置く */
-    position: absolute; inset: 0;
+    position: fixed; inset: 0;
     z-index: 50;
     display: flex; align-items: flex-end; justify-content: center;
     background: #000000;          /* 絵が届くまでの下地 */
@@ -471,6 +470,11 @@
 
 const Core = window.KinpakuCore;
 
+/* 端末に届いている版。診断の1行に出す。
+   「直したのに変わらない」のが、届いていないせいなのか、直し方が
+   外れているせいなのか、これが無いと切り分けられなかった */
+const 版 = "v14";
+
 /* ============================================================
    金箔散らし
    - タップ / なぞりで金箔が舞い散り、少し落ちた先で貼り付く
@@ -497,18 +501,28 @@ const baseCtx = baseCv.getContext("2d");
 let W = 0, H = 0, DPR = 1;
 
 /* ----- 端末解像度に合わせてCanvasを設定(リサイズ時は積もった箔を引き継ぐ) ----- */
-/* 画面の高さ。ホーム画面から開くと innerHeight は上の安全域ぶん足りないので、
-   100vh を実際に測って、大きい方を使う(実機で innerHeight 873 / 100vh 932) */
-function 画面の高さ() {
-  const 箱 = document.createElement("div");
-  箱.style.cssText = "position:absolute;left:0;top:0;width:0;height:100vh;visibility:hidden;";
-  document.body.appendChild(箱);
-  const h = Math.round(箱.getBoundingClientRect().height);
-  箱.remove();
-  return Math.max(window.innerHeight, h || 0);
+/* ホームバーとの重なりを測って、下の余白を決める。
+   ウェブ画面の下端 (画面上での位置 + 高さ) が、ホームバーの上端より
+   下まで来ているときだけ、その重なりぶんを空ける */
+function 下の余白を決める() {
+  const 測り = document.createElement("div");
+  測り.style.cssText =
+    "position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;" +
+    "padding-bottom:env(safe-area-inset-bottom);";
+  document.body.appendChild(測り);
+  const 安全域下 = Math.round(parseFloat(getComputedStyle(測り).paddingBottom) || 0);
+  測り.remove();
+  const 端末の高さ = window.innerHeight > window.innerWidth
+    ? Math.max(screen.width, screen.height)
+    : Math.min(screen.width, screen.height);
+  const 画面の下端 = Math.round((window.screenY || 0) + window.innerHeight);
+  const 余白 = Core.bottomGap(画面の下端, 端末の高さ, 安全域下);
+  document.documentElement.style.setProperty("--下の余白", 余白 + "px");
+  return 余白;
 }
 
 function resize() {
+  下の余白を決める();
   const oldW = sedCv.width, oldH = sedCv.height;
   let old = null;
   if (oldW > 0 && oldH > 0) {
@@ -518,7 +532,7 @@ function resize() {
     old.getContext("2d").drawImage(sedCv, 0, 0);
   }
   DPR = Math.min(window.devicePixelRatio || 1, 2);
-  W = window.innerWidth; H = 画面の高さ();
+  W = window.innerWidth; H = window.innerHeight;
   cv.width  = W * DPR; cv.height  = H * DPR;
   cv.style.width = W + "px"; cv.style.height = H + "px";
   sedCv.width = W * DPR; sedCv.height = H * DPR;
@@ -1511,7 +1525,9 @@ function 画面の診断() {
     "外" + Math.round(window.outerHeight || 0),
     "見え" + Math.round((window.visualViewport && window.visualViewport.height) || 0),
     "位置" + Math.round(window.screenY || 0),
+    "下余白" + (getComputedStyle(document.documentElement).getPropertyValue("--下の余白") || "?").trim(),
     開き方,
+    版,
   ].join(" / ");
 }
 
@@ -1887,11 +1903,27 @@ function drawTitle(dt) {
 
 /* 触れたら遊ぶ画面へ。薄れ切ってから display:none にして、
    消えたあとの一枚が指の邪魔をしないようにする */
+/* タイトルの絵を、根っこ(html)の背景にも敷く。
+   背景だけは切り取られず、ウェブ画面いっぱいに塗られるので、
+   渡された高さ(873)より下の帯まで絵が届く。
+   遊ぶ画面では黒に戻す(絵が下の帯に残ってしまうため) */
+function 根に絵を敷く(敷く) {
+  const 根 = document.documentElement.style;
+  根.backgroundImage = 敷く ? "url('./title.jpg')" : "none";
+  根.backgroundSize = "cover";
+  根.backgroundPosition = "center";
+  根.backgroundRepeat = "no-repeat";
+}
+根に絵を敷く(true);
+
 function dismissTitle() {
   if (!titleUp) return;
   titleUp = false;
   titleEl.classList.add("gone");
-  setTimeout(() => titleEl.classList.add("off"), 520);
+  setTimeout(() => {
+    titleEl.classList.add("off");
+    根に絵を敷く(false);
+  }, 520);
 }
 titleEl.addEventListener("pointerdown", (e) => { e.preventDefault(); dismissTitle(); });
 

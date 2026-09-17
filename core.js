@@ -397,7 +397,24 @@
     return out;
   }
 
+  /* ============================================================
+     下の余白:ホームバーに掛からないために、どれだけ空けるか
+     ------------------------------------------------------------
+     ホーム画面から開くと、iOS が渡してくるウェブ画面が画面より短い
+     ことがある(実機で 端末932 に対して 描ける873、位置0)。その場合
+     ウェブ画面の下端は 873 で終わり、ホームバー(898〜932)には届かない。
+     届いていないのに安全域ぶん空けると、34pt がまるまる無駄になる。
+
+     画面を触らない計算なので、ここに置いて node で試す。
+     ============================================================ */
+  function bottomGap(画面の下端, 端末の高さ, 安全域下) {
+    const 下 = Math.max(0, 安全域下 || 0);
+    const 重なり = (画面の下端 || 0) - ((端末の高さ || 0) - 下);
+    return Math.max(0, Math.min(下, Math.round(重なり)));
+  }
+
   root.KinpakuCore = {
+    bottomGap,
     arcPts, profile, polar, circleHalf,
     area, perimeter, bbox, contains, compactness, normalize, convexHull, concavity,
     SHAPE_DEFS, buildShapes,
