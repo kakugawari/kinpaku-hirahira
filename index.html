@@ -162,16 +162,61 @@
     /* 同じ理由で absolute。根っこの下端(=画面の下)に着く */
     position: absolute; bottom: 0; left: 0; right: 0;
     display: flex; align-items: flex-end; justify-content: center;
-    gap: 7px;
+    gap: 4px;
+    /* 上の 26px は飾り枠(反りのある金線)の場所。道具はその下に並べる */
     /* ホームバーに掛からないための余白。ただし、ウェブ画面の下端が
        ホームバーまで届いていなければ要らない(実機では 873 で終わり、
        ホームバーは 898 から。34pt ぶん無駄に空いていた) */
-    padding: 12px 8px calc(10px + var(--下の余白, env(safe-area-inset-bottom, 0px)));
-    background: linear-gradient(to top, rgba(0,0,0,0.92) 45%, rgba(0,0,0,0));
+    padding: 30px 8px calc(10px + var(--下の余白, env(safe-area-inset-bottom, 0px)));
+    background: linear-gradient(to top,
+      rgba(0,0,0,0.94) 42%, rgba(8,5,2,0.78) 72%, rgba(0,0,0,0));
   }
+
+  /* --- 帯の飾り枠。左上の額と同じ手(細い金線・菱・桜)で揃える。
+         描くのは一度きり(静止した SVG と CSS)なので、毎コマの塗りは増えない。
+         pointer-events を切って、飾りが操作を食わないようにする --- */
+  #bar-frame {
+    position: absolute; inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+    color: rgba(214,186,130,1);
+  }
+  /* 反りのある線。端から端まで渡すため、横だけ伸ばす
+     (preserveAspectRatio="none")。線の太さは伸ばされると
+     縦横で変わってしまうので non-scaling-stroke で止める */
+  #bar-frame .arc {
+    position: absolute; left: 0; top: 0;
+    display: block; width: 100%; height: 30px;
+  }
+  /* 反りのてっぺんに置く菱の留め */
+  #bar-frame .finial {
+    position: absolute; left: 50%; top: 2.5px;
+    width: 7px; height: 7px; margin-left: -3.5px;
+    background: rgba(240,216,120,0.92);
+    transform: rotate(45deg);
+    box-shadow: 0 0 9px 1px rgba(240,200,110,0.45);
+  }
+  /* 桜は、線が反り上がる肩(左右 19.7%・高さ 19.3px)の上に載せる */
+  #bar-frame .sakura {
+    position: absolute; top: 12px;
+    width: 15px; height: 15px;
+    color: rgba(230,200,136,0.55);
+  }
+  #bar-frame .sakura.l { left: calc(19.7% - 7.5px); }
+  #bar-frame .sakura.r { right: calc(19.7% - 7.5px); }
+  /* 青海波は下の隅に、うっすらと */
+  /* 画面の外へはみ出させない(帯の中身は全部、画面の中に収める) */
+  #bar-frame .nami {
+    position: absolute; bottom: 0;
+    width: 96px; height: 26px;
+    color: rgba(214,186,130,1);
+    opacity: 0.16;
+  }
+  #bar-frame .nami.l { left: 0; }
+  #bar-frame .nami.r { right: 0; transform: scaleX(-1); }
   .swatch, .tool {
     display: flex; flex-direction: column; align-items: center; gap: 5px;
-    min-width: 40px;             /* 指で押せる幅を切らさない */
+    min-width: 54px;             /* 指で押せる幅を切らさない */
     padding: 2px 3px;
     background: none; border: 0;
     font-family: inherit; font-size: 10px; letter-spacing: 0.06em;
@@ -273,7 +318,30 @@
   .tool:active svg { filter: drop-shadow(0 0 7px rgba(240,216,120,0.55)); }
   .swatch:active .foil { transform: scale(1.06); }
 
-  .divider { width: 1px; height: 36px; margin-bottom: 8px; background: rgba(255,255,255,0.12); }
+  /* 仕切りは、細い金線のまんなかに菱を留めたもの(左上の飾り罫と同じ手) */
+  .divider {
+    position: relative;
+    width: 1px; height: 38px; margin-bottom: 7px;
+    flex: 0 0 auto;
+    background: linear-gradient(to bottom,
+      rgba(214,186,130,0), rgba(214,186,130,0.3), rgba(214,186,130,0));
+  }
+  .divider::after {
+    content: ""; position: absolute; left: 50%; top: 50%;
+    width: 3.4px; height: 3.4px; margin: -1.7px 0 0 -1.7px;
+    background: rgba(226,196,130,0.6);
+    transform: rotate(45deg);
+  }
+  /* 指の道具(ずらす・消す)と、お品(お題・記録・払う)の境目だけは強く */
+  .divider.strong {
+    height: 46px; margin-bottom: 3px;
+    background: linear-gradient(to bottom,
+      rgba(214,186,130,0), rgba(214,186,130,0.52), rgba(214,186,130,0));
+  }
+  .divider.strong::after {
+    width: 4.6px; height: 4.6px; margin: -2.3px 0 0 -2.3px;
+    background: rgba(240,216,120,0.8);
+  }
 
   /* ===== 枠付きのボタン(結果・記録の帳で使う) ===== */
   .btn {
@@ -514,6 +582,74 @@
 <div id="hint">触れて蒔き なでてずらす</div>
 
 <div id="bar">
+  <!-- 飾り枠。反りのある金線・てっぺんの菱・肩の桜・隅の青海波。
+       すべて静止した絵なので、毎コマ描き直すものは増えない -->
+  <div id="bar-frame" aria-hidden="true">
+    <svg class="arc" viewBox="0 0 400 30" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="arc-gold" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#d6ba82" stop-opacity="0"/>
+          <stop offset="0.15" stop-color="#d6ba82" stop-opacity="0.45"/>
+          <stop offset="0.5" stop-color="#f0d878" stop-opacity="0.9"/>
+          <stop offset="0.85" stop-color="#d6ba82" stop-opacity="0.45"/>
+          <stop offset="1" stop-color="#d6ba82" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <path d="M0 26.5 C 78 26.5 112 6 200 6 C 288 6 322 26.5 400 26.5"
+            fill="none" stroke="url(#arc-gold)" stroke-width="1.2"
+            vector-effect="non-scaling-stroke"/>
+      <path d="M0 31 C 78 31 112 11 200 11 C 288 11 322 31 400 31"
+            fill="none" stroke="url(#arc-gold)" stroke-width="0.8" stroke-opacity="0.4"
+            vector-effect="non-scaling-stroke"/>
+    </svg>
+    <span class="finial"></span>
+  <svg class="sakura l" viewBox="0 0 20 20" aria-hidden="true">
+    <g fill="currentColor">
+      <path d="M10 10 C 7.5 8.5 6.9 5.4 8.5 3.5 C 9.4 2.5 10.6 2.5 11.5 3.5 C 13.1 5.4 12.5 8.5 10 10 Z"/>
+      <path d="M10 10 C 7.5 8.5 6.9 5.4 8.5 3.5 C 9.4 2.5 10.6 2.5 11.5 3.5 C 13.1 5.4 12.5 8.5 10 10 Z" transform="rotate(72 10 10)"/>
+      <path d="M10 10 C 7.5 8.5 6.9 5.4 8.5 3.5 C 9.4 2.5 10.6 2.5 11.5 3.5 C 13.1 5.4 12.5 8.5 10 10 Z" transform="rotate(144 10 10)"/>
+      <path d="M10 10 C 7.5 8.5 6.9 5.4 8.5 3.5 C 9.4 2.5 10.6 2.5 11.5 3.5 C 13.1 5.4 12.5 8.5 10 10 Z" transform="rotate(216 10 10)"/>
+      <path d="M10 10 C 7.5 8.5 6.9 5.4 8.5 3.5 C 9.4 2.5 10.6 2.5 11.5 3.5 C 13.1 5.4 12.5 8.5 10 10 Z" transform="rotate(288 10 10)"/>
+    </g>
+    <circle cx="10" cy="10" r="1.1" fill="rgba(255,244,214,0.85)"/>
+  </svg>
+  <svg class="sakura r" viewBox="0 0 20 20" aria-hidden="true">
+    <g fill="currentColor">
+      <path d="M10 10 C 7.5 8.5 6.9 5.4 8.5 3.5 C 9.4 2.5 10.6 2.5 11.5 3.5 C 13.1 5.4 12.5 8.5 10 10 Z"/>
+      <path d="M10 10 C 7.5 8.5 6.9 5.4 8.5 3.5 C 9.4 2.5 10.6 2.5 11.5 3.5 C 13.1 5.4 12.5 8.5 10 10 Z" transform="rotate(72 10 10)"/>
+      <path d="M10 10 C 7.5 8.5 6.9 5.4 8.5 3.5 C 9.4 2.5 10.6 2.5 11.5 3.5 C 13.1 5.4 12.5 8.5 10 10 Z" transform="rotate(144 10 10)"/>
+      <path d="M10 10 C 7.5 8.5 6.9 5.4 8.5 3.5 C 9.4 2.5 10.6 2.5 11.5 3.5 C 13.1 5.4 12.5 8.5 10 10 Z" transform="rotate(216 10 10)"/>
+      <path d="M10 10 C 7.5 8.5 6.9 5.4 8.5 3.5 C 9.4 2.5 10.6 2.5 11.5 3.5 C 13.1 5.4 12.5 8.5 10 10 Z" transform="rotate(288 10 10)"/>
+    </g>
+    <circle cx="10" cy="10" r="1.1" fill="rgba(255,244,214,0.85)"/>
+  </svg>
+  <svg class="nami l" viewBox="0 0 96 26" aria-hidden="true">
+    <g fill="none" stroke="currentColor" stroke-width="0.9">
+      <path d="M0 26 A 16 16 0 0 1 32 26"/>
+      <path d="M5 26 A 11 11 0 0 1 27 26"/>
+      <path d="M10 26 A 6 6 0 0 1 22 26"/>
+      <path d="M32 26 A 16 16 0 0 1 64 26"/>
+      <path d="M37 26 A 11 11 0 0 1 59 26"/>
+      <path d="M42 26 A 6 6 0 0 1 54 26"/>
+      <path d="M64 26 A 16 16 0 0 1 96 26"/>
+      <path d="M69 26 A 11 11 0 0 1 91 26"/>
+      <path d="M74 26 A 6 6 0 0 1 86 26"/>
+    </g>
+  </svg>
+  <svg class="nami r" viewBox="0 0 96 26" aria-hidden="true">
+    <g fill="none" stroke="currentColor" stroke-width="0.9">
+      <path d="M0 26 A 16 16 0 0 1 32 26"/>
+      <path d="M5 26 A 11 11 0 0 1 27 26"/>
+      <path d="M10 26 A 6 6 0 0 1 22 26"/>
+      <path d="M32 26 A 16 16 0 0 1 64 26"/>
+      <path d="M37 26 A 11 11 0 0 1 59 26"/>
+      <path d="M42 26 A 6 6 0 0 1 54 26"/>
+      <path d="M64 26 A 16 16 0 0 1 96 26"/>
+      <path d="M69 26 A 11 11 0 0 1 91 26"/>
+      <path d="M74 26 A 6 6 0 0 1 86 26"/>
+    </g>
+  </svg>
+  </div>
   <button class="tool hand" id="btn-slide" aria-label="ずらす">
     <!-- 指先と、その後ろに引く筋 -->
     <svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -522,6 +658,7 @@
     </svg>
     <span class="cap">ずらす</span>
   </button>
+  <div class="divider"></div>
   <button class="tool hand" id="btn-erase" aria-label="消す">
     <!-- 消しゴム -->
     <svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -531,7 +668,7 @@
     </svg>
     <span class="cap">消す</span>
   </button>
-  <div class="divider"></div>
+  <div class="divider strong"></div>
   <button class="tool" id="btn-odai" aria-label="お題">
     <!-- 扇 -->
     <svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -541,6 +678,7 @@
     </svg>
     <span class="cap">お題</span>
   </button>
+  <div class="divider"></div>
   <button class="tool" id="btn-book" aria-label="記録">
     <!-- ひらいた帳 -->
     <svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -551,6 +689,7 @@
     </svg>
     <span class="cap">記録</span>
   </button>
+  <div class="divider"></div>
   <button class="tool" id="btn-clear" aria-label="払う">
     <!-- 積んだ小判 -->
     <svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

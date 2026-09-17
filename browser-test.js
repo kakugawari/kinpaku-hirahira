@@ -676,6 +676,33 @@ async function run() {
       ok(bar.最小の押し所 >= 28,
         `${label}: ${bar.押せる数}つの操作すべてが指で押せる大きさ (最小 ${Math.round(bar.最小の押し所)}px)`);
 
+      /* 帯の飾り枠(反りのある金線・菱・桜・青海波)。
+         飾りは帯いっぱいに重ねてあるので、pointer-events を切り忘れると
+         上の層が全面をふさいで、どのボタンも押せなくなる。
+         「絵があるか」ではなく「絵ごしにボタンへ指が届くか」で見張る */
+      const 飾り = await pbar.evaluate(() => {
+        const 枠 = document.getElementById('bar-frame');
+        if (!枠) return { 枠あり: false };
+        const 届かない = [];
+        for (const b of document.querySelectorAll('#bar button')) {
+          const r = b.getBoundingClientRect();
+          const 当たり = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+          const 同じ = 当たり instanceof Element && 当たり.closest('button') === b;
+          if (!同じ) 届かない.push(b.id);
+        }
+        return {
+          枠あり: true,
+          意匠: ['.arc', '.finial', '.sakura.l', '.sakura.r', '.nami.l', '.nami.r']
+            .filter((s) => 枠.querySelector(s)),
+          指を通す: getComputedStyle(枠).pointerEvents === 'none',
+          届かない,
+        };
+      });
+      ok(飾り.枠あり && 飾り.意匠.length === 6,
+        `${label}: 帯に飾り枠が揃っている (${(飾り.意匠 || []).join(' ')})`);
+      ok(飾り.指を通す && 飾り.届かない.length === 0,
+        `${label}: 飾りごしでも道具が押せる (${飾り.届かない.length ? '届かない: ' + 飾り.届かない.join('・') : '5つとも届く'})`);
+
       /* 6つとも「絵 + 名前」で並んでいること。
          名前が抜けたり、道具の絵が出ていなければ落ちる */
       /* 左上の棚は、ふだん「いま選んでいる箔」だけを見せ、押すと下に
