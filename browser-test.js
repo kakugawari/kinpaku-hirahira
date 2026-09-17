@@ -788,7 +788,6 @@ async function run() {
       const img = document.getElementById('title-art');
       const b = img.getBoundingClientRect();
       return {
-        読み: img.alt,
         届いた: img.complete && img.naturalWidth > 0,
         元の大きさ: img.naturalWidth + 'x' + img.naturalHeight,
         すきま: Math.round(Math.max(b.top, b.left, innerWidth - b.right, innerHeight - b.bottom)),
@@ -796,9 +795,33 @@ async function run() {
         ぼけ: window.__app.titleFlakes.filter((f) => f.bokeh).length,
       };
     });
-    ok(絵.届いた, `題字の絵が届いている (${絵.元の大きさ})`);
-    ok(絵.読み === '金箔ひらひら', `絵の読みが「金箔ひらひら」(${絵.読み})`);
+    ok(絵.届いた, `背景の絵が届いている (${絵.元の大きさ})`);
     ok(絵.すきま <= 0, `絵が画面をすきま無く覆う (はみ出し/すきま ${絵.すきま}px)`);
+
+    /* 題字は絵に描かれていないので、こちらで組んでいる。
+       writing-mode まかせで縦書きにすると、字の送りを 0 で返すフォントの
+       環境で「金」と「箔」が同じ場所に重なって刷られる */
+    const 題字 = await pt.evaluate(() => {
+      const el = document.getElementById('title-main');
+      const boxes = [...el.children].map((sp) => {
+        const b = sp.getBoundingClientRect();
+        return { 字: sp.textContent, top: b.top, 高さ: b.height };
+      });
+      const 送り = [];
+      for (let i = 1; i < boxes.length; i++) 送り.push(boxes[i].top - boxes[i - 1].top);
+      const b = el.getBoundingClientRect();
+      return {
+        読み: boxes.map((x) => x.字).join(''),
+        字数: boxes.length,
+        重なり: 送り.filter((d, i) => d < boxes[i].高さ * 0.8).length,
+        最小: Math.min(...送り), 最大: Math.max(...送り),
+        はみ出し: b.left < 0 || b.right > innerWidth || b.top < 0 || b.bottom > innerHeight,
+      };
+    });
+    ok(題字.読み === '金箔ひらひら' && 題字.字数 === 6, `題字が「金箔ひらひら」(${題字.読み})`);
+    ok(題字.重なり === 0 && 題字.最大 - 題字.最小 < 2,
+      `題字の6字が重ならず等間隔に並ぶ (送り ${題字.最小.toFixed(0)}〜${題字.最大.toFixed(0)}px)`);
+    ok(!題字.はみ出し, '題字が画面からはみ出さない');
     ok(絵.ぼけ > 0 && 絵.層 > 絵.ぼけ,
       `奥のぼけた箔と手前の箔が両方ある (全${絵.層}枚 うちぼけ${絵.ぼけ}枚)`);
 
@@ -823,15 +846,19 @@ async function run() {
       const all = c.getImageData(0, 0, cv.width, cv.height).data;
       for (let i = 0; i < all.length; i += 4) if (all[i] > 120 && all[i] > all[i + 2] + 30) 金++;
       const b = document.getElementById('title-start').getBoundingClientRect();
+      const t = document.getElementById('title-main').getBoundingClientRect();
       return {
         金,
         案内の下地: 明るさ(b.left, b.top, b.width, b.height),
+        題字の下地: 明るさ(t.left, t.top, t.width, t.height),
         下端の下地: 明るさ(innerWidth * 0.1, innerHeight - 40, innerWidth * 0.8, 30),
       };
     });
     ok(下地.金 > 10000, `絵に金箔が写っている (${下地.金} 画素)`);
     ok(下地.案内の下地 < 70,
       `案内の文字が暗いところに乗っている (下地の明るさ ${下地.案内の下地} / 画面下端なら ${下地.下端の下地})`);
+    ok(下地.題字の下地 < 70,
+      `題字も暗いところに乗っている (下地の明るさ ${下地.題字の下地})`);
 
     /* 実際に落ちているか: 0.6 秒の間にどれだけ下がったか。
 

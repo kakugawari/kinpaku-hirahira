@@ -314,14 +314,34 @@
   #title-screen.off  { display: none; }
   #titlecv { position: absolute; inset: 0; }
 
-  /* 案内は、絵の題字と水面のあいだの暗いところへ置く。
-     下端に置くと、光る水面に重なって読めなくなる */
+  /* 題字と案内は、絵の暗いところ(上から6割ほど)へ置く。
+     下は光る水面なので、重ねると読めなくなる */
   #title-inner {
-    position: absolute; top: 68%; left: 0; right: 0;
+    position: absolute; top: 9%; left: 0; right: 0;
     display: flex; flex-direction: column; align-items: center;
+    gap: 26px;
     padding: 0 16px;
     pointer-events: none;          /* 触れたら始まる。文字が邪魔をしない */
     text-align: center;
+  }
+  #title-main {
+    /* 縦書き。writing-mode で組むと字の送りがフォント任せになり、
+       漢字の送りを 0 で返す環境では「金」と「箔」が重なって刷られる。
+       1字ずつ箱に入れて積み、送りは line-height で決める */
+    display: flex; flex-direction: column; align-items: center;
+    flex: 0 0 auto;
+    font-size: 42px; line-height: 1.3; letter-spacing: 0;
+    /* 金の照りは、文字を型抜きしたグラデーションで出す */
+    background: linear-gradient(to bottom, #f7e9b0 0%, #e2c168 34%, #b8862f 68%, #f0d878 100%);
+    -webkit-background-clip: text; background-clip: text;
+    color: transparent; -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 0 14px rgba(201,162,75,0.4)) drop-shadow(0 0 3px rgba(0,0,0,0.85));
+  }
+  #title-sub {
+    color: rgba(228,206,152,0.7);
+    font-size: 13px; letter-spacing: 0.32em;
+    text-shadow: 0 0 10px rgba(0,0,0,0.9);
+    margin-top: -8px;
   }
   #title-start {
     color: rgba(240,224,186,0.72);
@@ -420,9 +440,11 @@
 
 <!-- タイトル画面:触れると遊ぶ画面へ -->
 <div id="title-screen">
-  <img id="title-art" src="./title.jpg" alt="金箔ひらひら">
+  <img id="title-art" src="./title.jpg" alt="" aria-hidden="true">
   <canvas id="titlecv"></canvas>
   <div id="title-inner">
+    <div id="title-main"><span>金</span><span>箔</span><span>ひ</span><span>ら</span><span>ひ</span><span>ら</span></div>
+    <div id="title-sub">金箔を、ひとひら。</div>
     <div id="title-start">画面に触れて はじめる</div>
   </div>
 </div>
