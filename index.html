@@ -145,6 +145,16 @@
       conic-gradient(from 25deg at 34% 30%, #b9bec7, #eef1f5 12%, #8e949e 28%, #ffffff 44%,
                      #a9aeb8 60%, #e2e7ee 76%, #7d838d 90%, #b9bec7);
   }
+  /* 青金は、銀を多めに混ぜた淡い金。緑がかる */
+  #sw-ao .foil {
+    background:
+      radial-gradient(ellipse 62% 46% at 26% 22%, rgba(255,255,236,0.95), rgba(0,0,0,0) 62%),
+      radial-gradient(ellipse 46% 34% at 73% 69%, rgba(238,236,192,0.55), rgba(0,0,0,0) 66%),
+      radial-gradient(ellipse 42% 30% at 67% 25%, rgba(96,98,44,0.45), rgba(0,0,0,0) 70%),
+      radial-gradient(ellipse 52% 34% at 21% 75%, rgba(96,98,44,0.4), rgba(0,0,0,0) 70%),
+      conic-gradient(from 25deg at 34% 30%, #cfd08a, #eeecc0 12%, #b9bd78 28%, #f4f2cc 44%,
+                     #c8cd84 60%, #e4e1a6 76%, #a8ad68 90%, #cfd08a);
+  }
   /* 焼箔は、青・紫・茶がぬるりと移り変わる玉虫色 */
   #sw-yaki .foil {
     background:
@@ -383,6 +393,7 @@
   <button class="swatch active" id="sw-gold"   aria-label="金箔"><span class="foil"></span><span class="cap">金箔</span></button>
   <button class="swatch"        id="sw-silver" aria-label="銀箔"><span class="foil"></span><span class="cap">銀箔</span></button>
   <button class="swatch"        id="sw-copper" aria-label="赤金"><span class="foil"></span><span class="cap">赤金</span></button>
+  <button class="swatch"        id="sw-ao"     aria-label="青金"><span class="foil"></span><span class="cap">青金</span></button>
   <button class="swatch"        id="sw-yaki"   aria-label="焼箔"><span class="foil"></span><span class="cap">焼箔</span></button>
 </div>
 <div id="hint">触れて蒔き なでてずらす</div>
@@ -577,10 +588,57 @@ const PALETTES = {
   gold:   { base: ["#e8c15a", "#d4a944", "#c69436", "#f0d878", "#b8862f"], glint: "#fff6d5" },
   silver: { base: ["#d9dde3", "#b9bec7", "#eef1f5", "#a9aeb8", "#c8cdd5"], glint: "#ffffff" },
   copper: { base: ["#c9722f", "#b25a26", "#e08a3c", "#d97a35", "#9c4a1e"], glint: "#ffd9b0" },
+  /* 青金:銀を多めに混ぜた金。緑がかった淡い金になる */
+  ao:     { base: ["#e4e1a6", "#d6d692", "#eeecc0", "#c8cd84", "#dfe0b0"], glint: "#fbffe4" },
   /* 焼箔:銀箔などに熱や硫黄をかけて色を出したもの。一枚ごとに青・紫・
-     茶・玉虫と出方が違うので、地色の候補を散らして混ぜる */
+     茶・玉虫と出方が違うので、地色の候補を散らして混ぜる。
+     さらに1枚の中でも色が移るよう、二色の組を持たせる(下の 焼箔の勾配) */
   yaki:   { base: ["#2f6f8e", "#7a5ea8", "#b5794a", "#3f9aa0", "#54468a", "#8e5a86"], glint: "#d6f3ff" },
 };
+
+/* 焼箔の、1枚の中での色の移り。実物も熱のかけ方で縁と中で色が変わる。
+   箔1枚ごとに勾配を作ると重いので、箔の向きに合わせた「その場の座標」で
+   あらかじめ作っておき、使い回す(塗る前に translate/rotate しているので、
+   勾配も箔と一緒に回る) */
+/* 組にするのは、色の輪の上で隣り合う色どうし。離れた色を混ぜると
+   中間で色が抜け、実測で彩度が 0.397 → 0.295、濃い色の割合が
+   37% → 14% まで落ちた */
+const YAKI_PAIRS = [
+  ["#3f9aa0", "#2f6f8e"],   /* 青緑 → 青 */
+  ["#2f6f8e", "#54468a"],   /* 青 → 藍 */
+  ["#54468a", "#7a5ea8"],   /* 藍 → 紫 */
+  ["#7a5ea8", "#8e5a86"],   /* 紫 → 葡萄 */
+  ["#8e5a86", "#b5794a"],   /* 葡萄 → 茶 */
+  ["#b5794a", "#8a6f3a"],   /* 茶 → 金茶 */
+];
+/* 大きさごとに作り分ける。ひとつの勾配を使い回すと、小さい砂子は
+   二色の「中間あたり」しか拾わず、色が浅く濁って見えた */
+const YAKI_SIZES = [2, 4, 7, 11, 15];
+const 勾配の棚 = new WeakMap();
+
+function 焼箔の勾配(c, i, size) {
+  let 棚 = 勾配の棚.get(c);
+  if (!棚) { 棚 = []; 勾配の棚.set(c, 棚); }
+  /* 大きさをいちばん近い段に丸める */
+  let 段 = 0;
+  for (let k = 1; k < YAKI_SIZES.length; k++) {
+    if (Math.abs(YAKI_SIZES[k] - size) < Math.abs(YAKI_SIZES[段] - size)) 段 = k;
+  }
+  const 番 = (i % YAKI_PAIRS.length) * YAKI_SIZES.length + 段;
+  if (!棚[番]) {
+    const [a, b] = YAKI_PAIRS[i % YAKI_PAIRS.length];
+    const r = YAKI_SIZES[段];
+    const g = c.createLinearGradient(-r, -r, r, r);
+    /* 端は色を残したまま、真ん中だけで移す。全体を通して混ぜると、
+       箔のほとんどが中間色になって濁る */
+    g.addColorStop(0, a);
+    g.addColorStop(0.38, a);
+    g.addColorStop(0.62, b);
+    g.addColorStop(1, b);
+    棚[番] = g;
+  }
+  return 棚[番];
+}
 let currentPalette = "gold";
 
 /* ============================================================
@@ -633,6 +691,8 @@ function makeFlake(x, y, big) {
     swayAmp: (grade === 0 ? 0.45 : 0.25) + Math.random() * 0.5,    /* 軽い粉ほどよく漂う */
     verts,
     color: colors[(Math.random() * colors.length) | 0],
+    /* 焼箔だけ、1枚の中で色が移る。どの組で移るかは1枚ごとに引く */
+    gi: currentPalette === "yaki" ? (Math.random() * YAKI_PAIRS.length) | 0 : -1,
     glint: PALETTES[currentPalette].glint,
     settleY: y + SETTLE_MIN + Math.random() * SETTLE_SPAN,   /* この高さまで落ちたら貼り付く */
   };
@@ -657,7 +717,7 @@ function paintSettled(c, r) {
   } else {
     /* 表面:明度の個体差を広めに取り、平坦さをなくす */
     c.globalAlpha = r.bright;
-    c.fillStyle = r.color;
+    c.fillStyle = r.gi >= 0 ? 焼箔の勾配(c, r.gi, r.size) : r.color;
     drawPoly(c, r.verts, 1);
     /* ごく薄い縁のハイライトで箔の厚みを表現 */
     c.globalAlpha = r.bright * 0.35;
@@ -684,7 +744,7 @@ function stampFlake(f) {
   const rec = {
     x: f.x, y: f.y, size: f.size + 2, glint: f.glint,
     /* ずらすときに姿を復元するための情報 */
-    verts: f.verts, rot: f.rot,
+    verts: f.verts, rot: f.rot, gi: f.gi,
     flipped, bright: 0.55 + Math.random() * 0.45,
     color: flipped ? shadeColor(f.color, 0.45) : f.color,
   };
@@ -1256,7 +1316,7 @@ function draw消えゆく() {
     ctx.translate(s.x0 + (s.x1 - s.x0) * e, s.y0 + (s.y1 - s.y0) * e);
     ctx.rotate(s.rot0 + (s.rot1 - s.rot0) * e);
     ctx.globalAlpha = (r.flipped ? 0.85 : r.bright) * (1 - p);
-    ctx.fillStyle = r.color;
+    ctx.fillStyle = (!r.flipped && r.gi >= 0) ? 焼箔の勾配(ctx, r.gi, r.size) : r.color;
     drawPoly(ctx, r.verts, 1);
     ctx.restore();
   }
@@ -1292,7 +1352,7 @@ function drawSliding() {
     ctx.translate(s.x0 + (s.x1 - s.x0) * e, s.y0 + (s.y1 - s.y0) * e);
     ctx.rotate(s.rot0 + (s.rot1 - s.rot0) * e);
     ctx.globalAlpha = r.flipped ? 0.85 : r.bright;
-    ctx.fillStyle = r.color;
+    ctx.fillStyle = (!r.flipped && r.gi >= 0) ? 焼箔の勾配(ctx, r.gi, r.size) : r.color;
     drawPoly(ctx, r.verts, 1);
     ctx.restore();
   }
@@ -1699,7 +1759,10 @@ function drawShapeOutline() {
 /* ============================================================
    色の切り替え
    ============================================================ */
-const swatches = { gold: "sw-gold", silver: "sw-silver", copper: "sw-copper", yaki: "sw-yaki" };
+const swatches = {
+  gold: "sw-gold", silver: "sw-silver", copper: "sw-copper",
+  ao: "sw-ao", yaki: "sw-yaki",
+};
 /* 指がやることの並び。ここから1つだけが選ばれている */
 const 指の並び = [...Object.values(swatches), "btn-slide", "btn-erase"];
 
@@ -2003,7 +2066,7 @@ function frame(now) {
     ctx.save();
     ctx.translate(f.x, f.y);
     ctx.rotate(f.rot);
-    ctx.fillStyle = f.color;
+    ctx.fillStyle = f.gi >= 0 ? 焼箔の勾配(ctx, f.gi, f.size) : f.color;
     ctx.globalAlpha = 0.55 + bright * 0.45;
     drawPoly(ctx, f.verts, yScale);
     /* 面がこちらを向いた瞬間、glint色でひときわ光る */
@@ -2032,6 +2095,7 @@ window.__app = {
   flakes, settled, sliding, sparkles, odai, SHAPES,
   Core,
   slidePush, PUSH_RADIUS, SETTLE_MIN, SETTLE_SPAN,
+  YAKI_PAIRS,
   bladePush, distToPath, BLADE_R,
   titleFlakes,
   isTitleUp() { return titleUp; },

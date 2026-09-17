@@ -675,8 +675,8 @@ async function run() {
       });
       ok(中身.道具.length === 5 && 中身.道具.every((k) => k.名前.trim() && k.絵),
         `${label}: 帯の5つに絵と名前が揃う (${中身.道具.map((k) => k.名前).join('・')})`);
-      ok(中身.箔.length === 4 && 中身.箔.every((k) => k.名前.trim() && k.絵),
-        `${label}: 箔の棚に4種そろう (${中身.箔.map((k) => k.名前).join('・')})`);
+      ok(中身.箔.length === 5 && 中身.箔.every((k) => k.名前.trim() && k.絵),
+        `${label}: 箔の棚に5種そろう (${中身.箔.map((k) => k.名前).join('・')})`);
       ok(中身.棚の位置.左 < V.width / 3 && 中身.棚の位置.上 < V.height / 4,
         `${label}: 箔の棚が左上にある (左${中身.棚の位置.左} / 上${中身.棚の位置.上})`);
       ok(中身.選ばれている.length === 1 && 中身.選ばれている[0] === 'sw-gold',
@@ -715,9 +715,14 @@ async function run() {
       await pbar.waitForTimeout(200);
       await pbar.mouse.move(CX, Math.round(V.height * 0.35));
       await pbar.mouse.down(); await pbar.waitForTimeout(250); await pbar.mouse.up();
-      await pbar.waitForTimeout(1600);
+      /* 落ち切るまで待つ。落下中の箔には白いきらめきが乗るので、
+         途中で測ると色が薄く出る(実測で彩度 0.33 → 0.22) */
+      await pbar.waitForTimeout(3600);
+      /* 測るのは「積もった箔だけ」を写した絵。画面そのものを測ると、
+         きらめきの白い光や落下中の箔が混ざって、測るたびに値が振れる
+         (実測で彩度が 0.35 と 0.30 の間で揺れ、見張りが落ちた) */
       const 焼 = await pbar.evaluate(() => {
-        const cv = document.getElementById('cv');
+        const cv = window.__app.sedimentSnapshot();
         const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
         let 青い = 0, 明るい = 0;
         for (let i = 0; i < d.length; i += 4) {
@@ -730,6 +735,64 @@ async function run() {
       });
       ok(焼.明るい > 200 && 焼.青い > 焼.明るい * 0.15,
         `${label}: 焼箔を選ぶと玉虫色が撒かれる (青が強い画素 ${焼.青い} / 色のある画素 ${焼.明るい})`);
+
+      /* 焼箔は1枚の中でも色が移る。積もった記録が「二色の組」の番号を
+         持っていること、他の箔は持たないことを見る(番号が落ちると、
+         塗り直したときに一色に戻ってしまう) */
+      const 組 = await pbar.evaluate(() => {
+        const s = window.__app.settled;
+        return { 数: s.length, 組あり: s.filter((r) => r.gi >= 0).length };
+      });
+      ok(組.数 > 0 && 組.組あり === 組.数,
+        `${label}: 焼箔は一枚ごとに二色の組を持つ (${組.組あり}/${組.数} 枚)`);
+
+      /* 二色を混ぜると、中間で色が抜ける。離れた色どうしを組にすると
+         濁った(実測で平均の彩度 0.397 → 0.295、濃い色の割合 37% → 14%)。
+         画素の彩度は箔の引き方で 0.32〜0.39 と揺れるので、見張りは
+         濁りの元 ―― 組にした二色が色の輪でどれだけ離れているか ―― に当てる */
+      const 組の開き = await pbar.evaluate(() => {
+        const 色相 = (hex) => {
+          const r = parseInt(hex.slice(1, 3), 16) / 255;
+          const g = parseInt(hex.slice(3, 5), 16) / 255;
+          const b = parseInt(hex.slice(5, 7), 16) / 255;
+          const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+          if (d === 0) return 0;
+          let h;
+          if (mx === r) h = ((g - b) / d) % 6;
+          else if (mx === g) h = (b - r) / d + 2;
+          else h = (r - g) / d + 4;
+          return (h * 60 + 360) % 360;
+        };
+        return window.__app.YAKI_PAIRS.map(([a, b]) => {
+          const d = Math.abs(色相(a) - 色相(b));
+          return Math.round(Math.min(d, 360 - d));
+        });
+      });
+      const いちばん開いた組 = Math.max(...組の開き);
+      ok(いちばん開いた組 <= 90,
+        `${label}: 焼箔の二色が、色の輪で隣どうし (いちばん開いた組 ${いちばん開いた組}度 / 全部 ${組の開き.join(',')})`);
+
+      /* 青金:銀を多めに混ぜた淡い金。緑がかるので、青が赤よりはっきり弱く、
+         緑は赤とほぼ並ぶ(金箔は緑が赤よりだいぶ低い) */
+      await pbar.click('#btn-clear');
+      await pbar.waitForTimeout(1200);
+      await pbar.click('#sw-ao');
+      await pbar.waitForTimeout(200);
+      await pbar.mouse.move(CX, Math.round(V.height * 0.35));
+      await pbar.mouse.down(); await pbar.waitForTimeout(200); await pbar.mouse.up();
+      await pbar.waitForTimeout(3600);
+      const 青金 = await pbar.evaluate(() => {
+        const cv = window.__app.sedimentSnapshot();
+        const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+        let n = 0, 赤 = 0, 緑 = 0, 青 = 0;
+        for (let i = 0; i < d.length; i += 4) {
+          if (Math.max(d[i], d[i + 1], d[i + 2]) < 60) continue;
+          n++; 赤 += d[i]; 緑 += d[i + 1]; 青 += d[i + 2];
+        }
+        return { n, 赤: Math.round(赤 / Math.max(n, 1)), 緑: Math.round(緑 / Math.max(n, 1)), 青: Math.round(青 / Math.max(n, 1)) };
+      });
+      ok(青金.n > 200 && 青金.緑 >= 青金.赤 - 6 && 青金.青 < 青金.緑 - 20,
+        `${label}: 青金は緑がかった淡い金 (赤${青金.赤} 緑${青金.緑} 青${青金.青})`);
       await ctxBar.close();
     }
 
