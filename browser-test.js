@@ -94,6 +94,25 @@ async function 開く(page) {
   await タイトルを閉じる(page);
 }
 
+/**
+ * 箔を選ぶ。左上の額を押して品書きを開き、その中から選ぶ。
+ * ふだんは1つだけ見せて、押したときだけ下に開く作りになっている。
+ */
+async function 箔を選ぶ(page, id) {
+  const 開いている = () => page.evaluate(() =>
+    document.getElementById('palette').classList.contains('open'));
+  /* すでに開いていることもある。押すと閉じてしまうので、状態を見てから */
+  if (!(await 開いている())) {
+    await page.click('#palette-open');
+    await page.waitForFunction(
+      () => document.getElementById('palette').classList.contains('open'),
+      null, { timeout: 5000 });
+  }
+  await page.waitForTimeout(350);     // 開き切るまで(0.28秒)待つ
+  await page.click(id);
+  await page.waitForTimeout(350);
+}
+
 /** 開き直す。タイトルは開くたびに出るので、ここでも閉じる */
 async function 開き直す(page) {
   await page.reload();
@@ -193,7 +212,7 @@ async function run() {
     await p2.waitForTimeout(300);
     ok(await p2.evaluate(() => document.getElementById('odai-hud').classList.contains('show')),
       '指を捕まえても「お題」ボタンは押せる');
-    await p2.click('#sw-silver');
+    await 箔を選ぶ(p2, '#sw-silver');
     ok(await p2.evaluate(() => document.getElementById('sw-silver').classList.contains('active')),
       '指を捕まえても色は選べる');
     await ctx2.close();
@@ -659,6 +678,21 @@ async function run() {
 
       /* 6つとも「絵 + 名前」で並んでいること。
          名前が抜けたり、道具の絵が出ていなければ落ちる */
+      /* 左上の棚は、ふだん「いま選んでいる箔」だけを見せ、押すと下に
+         品書きが開く。5種を並べたままだと場所を取りすぎる */
+      const 閉じている = await pbar.evaluate(() => ({
+        開いていない: !document.getElementById('palette').classList.contains('open'),
+        品書きの高さ: Math.round(document.getElementById('palette-list').getBoundingClientRect().height),
+        額の名: document.getElementById('palette-name').textContent,
+        額の箔: document.getElementById('palette-foil').dataset.foil,
+      }));
+      ok(閉じている.開いていない && 閉じている.品書きの高さ === 0,
+        `${label}: ふだんは品書きが閉じている (高さ ${閉じている.品書きの高さ}px)`);
+      ok(閉じている.額の名 === '金箔' && 閉じている.額の箔 === 'gold',
+        `${label}: 額にいまの箔が出ている (${閉じている.額の名})`);
+
+      await pbar.click('#palette-open');
+      await pbar.waitForTimeout(400);
       const 中身 = await pbar.evaluate(() => {
         const 集める = (選択子) => [...document.querySelectorAll(選択子)].map((b) => ({
           id: b.id,
@@ -668,29 +702,42 @@ async function run() {
         const 棚 = document.getElementById('palette').getBoundingClientRect();
         return {
           道具: 集める('#bar button'),
-          箔: 集める('#palette .swatch'),
+          箔: 集める('#palette-list .swatch'),
+          開いた: document.getElementById('palette').classList.contains('open'),
+          押し所: [...document.querySelectorAll('#palette-list .swatch')]
+            .map((k) => Math.round(k.getBoundingClientRect().height)),
           棚の位置: { 左: Math.round(棚.left), 上: Math.round(棚.top), 下: Math.round(棚.bottom) },
-          選ばれている: [...document.querySelectorAll('#palette .swatch.active')].map((b) => b.id),
+          選ばれている: [...document.querySelectorAll('#palette-list .swatch.active')].map((b) => b.id),
         };
       });
+      ok(中身.開いた, `${label}: 額を押すと品書きが開く`);
+      ok(Math.min(...中身.押し所) >= 28,
+        `${label}: 品書きの1行が指で押せる高さ (最小 ${Math.min(...中身.押し所)}px)`);
       ok(中身.道具.length === 5 && 中身.道具.every((k) => k.名前.trim() && k.絵),
         `${label}: 帯の5つに絵と名前が揃う (${中身.道具.map((k) => k.名前).join('・')})`);
       ok(中身.箔.length === 5 && 中身.箔.every((k) => k.名前.trim() && k.絵),
-        `${label}: 箔の棚に5種そろう (${中身.箔.map((k) => k.名前).join('・')})`);
+        `${label}: 品書きに5種そろう (${中身.箔.map((k) => k.名前).join('・')})`);
       ok(中身.棚の位置.左 < V.width / 3 && 中身.棚の位置.上 < V.height / 4,
         `${label}: 箔の棚が左上にある (左${中身.棚の位置.左} / 上${中身.棚の位置.上})`);
       ok(中身.選ばれている.length === 1 && 中身.選ばれている[0] === 'sw-gold',
         `${label}: はじめは金箔が選ばれている`);
 
       // 箔を選び替えると、印も撒く色も移る
-      await pbar.click('#sw-silver');
+      await 箔を選ぶ(pbar, '#sw-silver');
       await pbar.waitForTimeout(200);
       const 選び替え = await pbar.evaluate(() => {
-        const a = [...document.querySelectorAll('#palette .swatch.active')].map((b) => b.id);
-        return { 印: a, 数: a.length };
+        const a = [...document.querySelectorAll('#palette-list .swatch.active')].map((b) => b.id);
+        return {
+          印: a, 数: a.length,
+          閉じた: !document.getElementById('palette').classList.contains('open'),
+          額の名: document.getElementById('palette-name').textContent,
+          額の箔: document.getElementById('palette-foil').dataset.foil,
+        };
       });
       ok(選び替え.数 === 1 && 選び替え.印[0] === 'sw-silver',
         `${label}: 箔を選び替えると印が移る (${選び替え.印.join(',')})`);
+      ok(選び替え.閉じた && 選び替え.額の名 === '銀箔' && 選び替え.額の箔 === 'silver',
+        `${label}: 選ぶと品書きが閉じ、額も入れ替わる (${選び替え.額の名})`);
       await pbar.mouse.move(CX, Math.round(V.height * 0.35));
       await pbar.mouse.down(); await pbar.waitForTimeout(150); await pbar.mouse.up();
       await pbar.waitForTimeout(1500);
@@ -711,7 +758,7 @@ async function run() {
          (金・銀・赤金では、青が赤を上回ることはない) */
       await pbar.click('#btn-clear');
       await pbar.waitForTimeout(1200);
-      await pbar.click('#sw-yaki');
+      await 箔を選ぶ(pbar, '#sw-yaki');
       await pbar.waitForTimeout(200);
       await pbar.mouse.move(CX, Math.round(V.height * 0.35));
       await pbar.mouse.down(); await pbar.waitForTimeout(250); await pbar.mouse.up();
@@ -776,7 +823,7 @@ async function run() {
          緑は赤とほぼ並ぶ(金箔は緑が赤よりだいぶ低い) */
       await pbar.click('#btn-clear');
       await pbar.waitForTimeout(1200);
-      await pbar.click('#sw-ao');
+      await 箔を選ぶ(pbar, '#sw-ao');
       await pbar.waitForTimeout(200);
       await pbar.mouse.move(CX, Math.round(V.height * 0.35));
       await pbar.mouse.down(); await pbar.waitForTimeout(200); await pbar.mouse.up();
@@ -1124,7 +1171,7 @@ async function run() {
     ok(枚数後 <= 枚数前, `ずらす手では箔が増えない (${枚数前} → ${枚数後} 枚)`);
 
     // 箔を選び直すと、蒔く手に戻る
-    await ph.click('#sw-gold');
+    await 箔を選ぶ(ph, '#sw-gold');
     await ph.waitForTimeout(200);
     const 手が戻った = await ph.evaluate(() => ({
       金: document.getElementById('sw-gold').classList.contains('active'),
