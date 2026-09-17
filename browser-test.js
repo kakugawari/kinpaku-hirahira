@@ -1143,10 +1143,37 @@ async function run() {
     ok(!/title\.jpg/.test(遊ぶときの根),
       `遊ぶ画面では根っこの背景を外す (${遊ぶときの根 || "なし"})`);
 
-    const 書き方 = await pv.evaluate(() => ({
-      上の帯: document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]').content,
-      下の余白: getComputedStyle(document.documentElement).getPropertyValue('--下の余白').trim(),
-    }));
+    const 書き方 = await pv.evaluate(() => {
+      const 探す = (選択子) => {
+        for (const sh of document.styleSheets) {
+          for (const r of sh.cssRules) if (r.selectorText === 選択子) return r.style;
+        }
+        return null;
+      };
+      const d = document.createElement('div');
+      d.style.cssText = 'position:absolute;left:0;top:0;width:0;height:100vh;visibility:hidden;';
+      document.body.appendChild(d);
+      const vh = Math.round(d.getBoundingClientRect().height);
+      d.remove();
+      return {
+        上の帯: document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]').content,
+        下の余白: getComputedStyle(document.documentElement).getPropertyValue('--下の余白').trim(),
+        根の高さ: (探す('html, body') || {}).height,
+        帯の置き方: (探す('#bar') || {}).position,
+        覆いの置き方: (探す('#title-screen') || {}).position,
+        画布: Math.round(document.getElementById('cv').getBoundingClientRect().height),
+        vh,
+      };
+    });
+    /* ここが今回の本命。実機では、根っこの高さを vh にしたとたん
+       渡される高さ自体が 873 → 932 に変わった。手もとのブラウザでは
+       vh と innerHeight が同じで違いが出ないので、書き方を見張る */
+    ok(/vh$/.test(書き方.根の高さ || ''),
+      `根っこの高さを vh で取っている (height: ${書き方.根の高さ})`);
+    ok(書き方.帯の置き方 === 'absolute' && 書き方.覆いの置き方 === 'absolute',
+      `全画面のものを根っこの中に置いている (帯 ${書き方.帯の置き方} / 覆い ${書き方.覆いの置き方})`);
+    ok(書き方.画布 === 書き方.vh,
+      `蒔ける面も vh の高さ (画布 ${書き方.画布} / 100vh ${書き方.vh})`);
     ok(書き方.上の帯 === 'black-translucent',
       `上の帯の裏まで絵を見せる指定 (${書き方.上の帯})`);
     ok(/^\d+px$/.test(書き方.下の余白),
