@@ -773,8 +773,9 @@ function emitBurst(x, y, count, big) {
 
 /* ずらす・消すは、指の通り道ぜんぶに効かせる。ただし1回ごとに沈殿レイヤーを
    描き直すので、動くたびに呼ぶと重い。少し進むか、少し時間が経つまで溜める */
-const 手の歩幅 = 13;        /* この距離だけ動いたら1回効かせる(px) */
+const 手の歩幅 = 13;        /* 消すとき、この距離だけ動いたら1回効かせる(px) */
 const 手の間隔 = 55;        /* または、この時間が経ったら(ミリ秒) */
+const 寄せる歩幅 = 2;       /* 寄せるときは、指について来ないと意味がないので細かく */
 const 手の道 = [];          /* 溜めている通り道 */
 let 手の時 = 0;
 
@@ -789,14 +790,18 @@ function 手を進める(x, y) {
   const 進み = 前 ? Math.hypot(x - 前.x, y - 前.y) : 0;
   手の道.push({ x, y });
   const 経過 = performance.now() - 手の時;
-  if (進み < 0.5 && 手 === "ずらす") return;          /* 止まっていたら、ずらすものが無い */
+  if (手 === "ずらす") {
+    if (進み < 寄せる歩幅) return;                    /* 止まっていたら寄せるものが無い */
+    手を効かせる();
+    return;
+  }
   if (手の道.length >= 2 && (進み >= 手の歩幅 || 経過 >= 手の間隔)) 手を効かせる();
 }
 
 function 手を効かせる() {
   if (手の道.length < 2) return;
   const a = 手の道[0], b = 手の道[手の道.length - 1];
-  if (手 === "ずらす") slidePush(手の道.slice(), b.x - a.x, b.y - a.y);
+  if (手 === "ずらす") bladePush(手の道.slice());
   else if (手 === "消す") erasePath(手の道.slice());
   /* 次のひと筆は、いまの指先から続ける */
   手の道.length = 0;
@@ -960,15 +965,102 @@ function 通り道の形(path, r) {
   return 道;
 }
 
+/* 通り道を囲う四角。消す・戻すを画面ぜんぶに掛けると、積もりが増えたとき
+   1コマ 116ms まで跳ねた。触った所の外は触らない */
+function 通り道の囲い(path, r) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const p of path) {
+    x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y);
+    x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
+  }
+  return {
+    x: Math.max(0, x0 - r), y: Math.max(0, y0 - r),
+    w: Math.min(W, x1 + r) - Math.max(0, x0 - r),
+    h: Math.min(H, y1 + r) - Math.max(0, y0 - r),
+  };
+}
+
 /* 切り抜いた中を一度まっさらにして、そこに残るものだけ置き直す。
    下地(記録から溢れて焼き付けたぶん)を戻すかどうかは、用で変わる */
-function 通り道を描き直す(道, 残る記録, 下地を戻す) {
+function 通り道を描き直す(道, 囲い, 残る記録, 下地を戻す) {
+  if (囲い.w <= 0 || 囲い.h <= 0) return;
   sedCtx.save();
   sedCtx.clip(道);
-  sedCtx.clearRect(0, 0, W, H);
-  if (下地を戻す) sedCtx.drawImage(baseCv, 0, 0, W, H);
+  sedCtx.clearRect(囲い.x, 囲い.y, 囲い.w, 囲い.h);
+  if (下地を戻す) {
+    sedCtx.drawImage(baseCv,
+      囲い.x * DPR, 囲い.y * DPR, 囲い.w * DPR, 囲い.h * DPR,
+      囲い.x, 囲い.y, 囲い.w, 囲い.h);
+  }
   sedCtx.restore();
   for (const r of 残る記録) paintSettled(sedCtx, r);
+}
+
+/* ============================================================
+   寄せる:指を「へら」と見て、通った跡の箔を前へ押し出す
+   ------------------------------------------------------------
+   はじめは、そばの箔に「指の動いたぶん × 距離の重み」を与えて
+   すべらせていた。これだと実機で2つ困ったことが起きた:
+
+   ・弧が何本も残って波のように見える
+     すべっている最中の箔は記録から外れているので、次のひと押しが
+     当たらない。押された場所に置き去りになって、押すたびに弧が1本ずつ
+     積み重なっていた
+   ・なぞった後ろに箔が残る
+     1回のひと押しで動くのは「そのあいだに指が進んだぶん(13px ほど)」
+     だけなので、指について来ない
+
+   そこで、指の下に半径 BLADE_R の円(へら)があると考えて、
+   その円に入った箔を「円の前ふちまで」押し出す。押した先は記録に
+   すぐ書き戻すので、次のひと押しでも続けて押される。指について来て、
+   通った後ろは空になる。
+   ============================================================ */
+const BLADE_R = 62;            /* 指の下のへらの半径(px) */
+
+function bladePush(path) {
+  if (path.length < 2) return 0;
+  const a = path[0], b = path[path.length - 1];
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 0.3) return 0;
+  const ux = dx / len, uy = dy / len;        /* 進む向き */
+  const vx = -uy, vy = ux;                   /* その直角 */
+
+  let 動いた = 0;
+  for (const r of settled) {
+    const ox = r.x - b.x, oy = r.y - b.y;
+    const along = ox * ux + oy * uy;         /* 指の前後 (+ が前) */
+    const perp  = ox * vx + oy * vy;         /* 指の左右 */
+    if (Math.abs(perp) >= BLADE_R) continue;
+    /* へらの前ふち。真ん中ほど遠くまで、端ほど動かない(自然に羽根が立つ) */
+    const 前ふち = Math.sqrt(BLADE_R * BLADE_R - perp * perp);
+    if (along >= 前ふち) continue;                    /* すでに前にいる */
+    if (along < -(len + BLADE_R)) continue;           /* 今回の通り道より後ろ */
+    /* 前ふちのすぐ内側へ。一列に揃うと壁に見えるので、少し散らす */
+    const 置く = 前ふち - Math.random() * BLADE_R * 0.35;
+    /* 横へ少しずつ逃がす。逃がさないと、寄せた山がへらの前に溜まり続け、
+       毎回その山ぜんぶを描き直すことになる(実測で 935枚→2553枚、
+       1回 22ms→35ms と重くなっていった)。雪かきと同じで、端から
+       こぼれて筋の両脇に土手ができる */
+    const 逃げ = perp * 0.04;
+    const よれ = (Math.random() - 0.5) * 5;
+    const 横 = perp + 逃げ + よれ;
+    r.x = b.x + ux * 置く + vx * 横;
+    r.y = b.y + uy * 置く + vy * 横;
+    r.x = Math.max(2, Math.min(W - 2, r.x));
+    r.y = Math.max(2, Math.min(H - 2, r.y));
+    r.rot += (Math.random() - 0.5) * 0.3;
+    動いた++;
+  }
+  if (動いた === 0) return 0;
+
+  /* 動かした所だけ描き直す。押し出し先はへらの円の中なので、
+     通り道を少し太めに取れば、元いた所も行き先も収まる */
+  const 道 = 通り道の形(path, BLADE_R + 16);
+  通り道を描き直す(道, 通り道の囲い(path, BLADE_R + 18),
+    settled.filter((r) => distToPath(r.x, r.y, path) < BLADE_R + 30), true);
+  sparkles.length = 0;
+  return 動いた;
 }
 
 /* 払った:通り道のそばの箔を拾って、なぞった向きへすべらせる */
@@ -1007,7 +1099,8 @@ function slidePush(path, dx, dy) {
   settled.length = 0;
   for (const r of kept) settled.push(r);
   const 道 = 通り道の形(path, PUSH_RADIUS + 12);
-  通り道を描き直す(道, kept.filter((r) => distToPath(r.x, r.y, path) < PUSH_RADIUS + 26), true);
+  通り道を描き直す(道, 通り道の囲い(path, PUSH_RADIUS + 14),
+    kept.filter((r) => distToPath(r.x, r.y, path) < PUSH_RADIUS + 26), true);
   sparkles.length = 0;
   return moved;
 }
@@ -1063,7 +1156,7 @@ function erasePath(path) {
   baseCtx.clearRect(0, 0, W, H);
   baseCtx.restore();
   /* 見えている絵も同じ所を抜いて、残した箔だけ置き直す(下地は戻さない) */
-  通り道を描き直す(道, 近く, false);
+  通り道を描き直す(道, 通り道の囲い(path, ERASE_RADIUS + 2), 近く, false);
   sparkles.length = 0;          /* 消えた箔を光らせ続けない */
   return 消した;
 }
@@ -1843,6 +1936,7 @@ window.__app = {
   flakes, settled, sliding, sparkles, odai, SHAPES,
   Core,
   slidePush, PUSH_RADIUS, SETTLE_MIN, SETTLE_SPAN,
+  bladePush, distToPath, BLADE_R,
   titleFlakes,
   isTitleUp() { return titleUp; },
   dismissTitle,

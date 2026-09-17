@@ -1039,6 +1039,44 @@ async function run() {
     const また蒔けた = await countFlakes(ph, { x0: 300, y0: 150, x1: 400, y1: 500 });
     ok(手が戻った.金 && !手が戻った.ずらす && また蒔けた > 100,
       `箔を選び直すと、また蒔ける (${また蒔けた} 画素)`);
+
+    /* 寄せたあと、通った跡に箔が残らないこと。
+
+       もとは「そばの箔に、指が進んだぶんの力を与えてすべらせる」作りで、
+       ・すべっている最中の箔は記録から外れていて次のひと押しが当たらず、
+         押すたびに弧が1本ずつ残って波のように見えた
+       ・1回で動くのは指が進んだぶん(13px ほど)だけなので、指について来ず
+         なぞった後ろに箔が残った
+       いまは指の下の円(へら)に入った箔を前ふちまで押し出すので、
+       通った跡は空になる。 */
+    await ph.click('#btn-clear');
+    await ph.waitForTimeout(1200);
+    for (const y of [200, 250, 300, 350]) {
+      await ph.mouse.move(40, y);
+      await ph.mouse.down();
+      for (let x = 40; x <= 400; x += 16) { await ph.mouse.move(x, y); await ph.waitForTimeout(12); }
+      await ph.mouse.up();
+      await ph.waitForTimeout(120);
+    }
+    await ph.waitForTimeout(3800);
+    const 通り道 = { x0: 300, y0: 424, x1: 430, y1: 476 };   // なぞる高さ 450 のまわり
+    const 寄せる前 = await countFlakes(ph, 通り道);
+    const 寄せる前の枚数 = await ph.evaluate(() => window.__app.settled.length);
+    ok(寄せる前 > 200, `寄せる前、通り道に箔がある (${寄せる前} 画素)`);
+
+    await ph.click('#btn-slide');
+    await ph.waitForTimeout(200);
+    await ph.mouse.move(420, 450);
+    await ph.mouse.down();
+    for (let x = 420; x >= 40; x -= 22) { await ph.mouse.move(x, 450); await ph.waitForTimeout(16); }
+    await ph.mouse.up();
+    await ph.waitForTimeout(800);
+    const 寄せた後 = await countFlakes(ph, 通り道);
+    const 寄せた後の枚数 = await ph.evaluate(() => window.__app.settled.length);
+    ok(寄せた後 < 寄せる前 * 0.1,
+      `寄せた跡に箔が残らない (${寄せる前} → ${寄せた後} 画素)`);
+    ok(寄せた後の枚数 > 寄せる前の枚数 * 0.9,
+      `寄せても箔は消えない、前へ移っただけ (${寄せる前の枚数} → ${寄せた後の枚数} 枚)`);
     await ctxH.close();
 
     // ------------------------------------------------ アイコン
