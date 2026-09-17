@@ -367,6 +367,10 @@
     pointer-events: none;
   }
   #odai-hud.show { display: flex; }
+  /* 塗り絵には点が付かない。難易度もひと匙も出さない */
+  #odai-hud.nurie #odai-level,
+  #odai-hud.nurie #odai-gauge,
+  #odai-hud.nurie #odai-gauge-label { display: none; }
   #odai-name {
     color: rgba(230,205,140,0.9);
     font-size: 15px; letter-spacing: 0.25em;
@@ -436,6 +440,24 @@
   #odai-level {
     color: rgba(230,205,140,0.7);
     font-size: 11px; letter-spacing: 0.3em;
+  }
+
+  /* 塗り絵の札。閉じているあいだは押せないが、消しはしない
+     (見えない褒美は、誰も目指せない) */
+  #btn-nurie {
+    margin-top: 2px;
+    font-size: 11px; letter-spacing: 0.12em;
+    white-space: normal; text-align: center; line-height: 1.7;
+  }
+  #btn-nurie.locked {
+    color: rgba(190,180,160,0.4);
+    border-color: rgba(190,180,160,0.18);
+    cursor: default;
+  }
+  #btn-nurie.on {
+    color: #f0d878;
+    border-color: rgba(240,216,120,0.7);
+    background: rgba(240,216,120,0.1);
   }
 
   /* ===== 記録の帳 ===== */
@@ -744,6 +766,8 @@
   <div id="book-summary"></div>
   <table id="book-table"></table>
   <div id="book-hint">型を押すと、その型で始まります</div>
+  <!-- 塗り絵。皆伝で開く。閉じているあいだも、何をすれば開くかは見せる -->
+  <button class="btn" id="btn-nurie"></button>
   <div id="book-buttons">
     <button class="btn" id="btn-book-clear">記録を消す</button>
     <button class="btn" id="btn-book-close">閉じる</button>
@@ -1142,11 +1166,11 @@ const POP_DECAY = 0.88;     /* 弾ける勢いの減り方。ふつうの空気�
 function emitBurst(x, y, count, big) {
   for (let i = 0; i < count; i++) {
     /* お題モード中は匙の残りが尽きたら撒けない */
-    if (odai.active && !odai.result) {
+    if (採点中() && !odai.result) {
       if (odai.budget <= 0) return;
       odai.budget--;
       hudFill.style.width = (odai.budget / odai.budgetMax * 100) + "%";
-    } else if (odai.active && odai.result) {
+    } else if (採点中() && odai.result) {
       return;   /* 結果表示中は撒けない */
     }
     if (flakes.length >= MAX_FLAKES) flakes.shift();  /* 上限超過時は古い箔を破棄 */
@@ -1250,7 +1274,7 @@ function onUp() {
       const vx = (b.x - a.x) / dtms * 1000;   /* px/秒 */
       const vy = (b.y - a.y) / dtms * 1000;
       if (Math.hypot(vx, vy) >= FLICK_SPEED) {
-        if (odai.active) {
+        if (採点中()) {
           /* お題中は採点が絡むので、ずらさずに同じ型でやり直し */
           resetRound();
           washAway();
@@ -1650,6 +1674,7 @@ const hitCtx = document.createElement("canvas").getContext("2d");
 
 const odai = {
   active: false,
+  塗り絵: false,        /* 下絵として型を出すだけ。ひと匙も採点も無い */
   shapeIdx: 0,
   tPath: null,          /* 画面座標に変換済みのPath2D */
   budgetMax: 0,         /* ひと匙。型の広さから決まる(core.js) */
@@ -1663,6 +1688,11 @@ const odai = {
   result: null,         /* 採点結果(表示中はここに入る) */
   settleTimer: 0,       /* 匙が尽きてから採点までの待ち */
 };
+
+/* 採点が絡んでいるか。塗り絵は型を出すだけなので、匙も採点も当たり判定も要らない。
+   「型が出ているか」(odai.active) と「点が付くか」(採点中) は別ものなので、
+   混ぜない ―― 混ぜると、塗り絵で匙が減ったり、輪郭が出なくなったりする */
+function 採点中() { return odai.active && !odai.塗り絵; }
 
 const hud = document.getElementById("odai-hud");
 const hudName = document.getElementById("odai-name");
@@ -1691,6 +1721,24 @@ function saveRecords() {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(records)); } catch (_) { /* 容量超過などは黙って諦める */ }
 }
 loadRecords();
+
+/* ------------------------------------------------------------
+   塗り絵の鍵。記録とは別に持つ。
+   段位は記録から出るので、記録につないだままだと「記録を消す」で
+   せっかく開いた物が閉じてしまう
+   ------------------------------------------------------------ */
+const NURIE_KEY = "kinpaku-nurie-v1";
+let 塗り絵の鍵 = false;
+try { 塗り絵の鍵 = localStorage.getItem(NURIE_KEY) === "1"; } catch (_) { /* 読めなくても遊べる */ }
+
+function 鍵を見直す(知らせる) {
+  if (塗り絵の鍵) return;
+  if (!Core.nurieUnlocked(records, SHAPES.length, false)) return;
+  塗り絵の鍵 = true;
+  try { localStorage.setItem(NURIE_KEY, "1"); } catch (_) { /* 容量超過などは諦める */ }
+  if (知らせる) toast("皆伝。塗り絵が開きました");
+}
+鍵を見直す(false);
 
 /* 型を画面中央に配置し、升目(埋まり判定のマス)を敷き直す */
 function buildShapeGeometry() {
@@ -1749,16 +1797,27 @@ function resetRound() {
   odai.result = null;
   odai.settleTimer = 0;
   resultEl.classList.remove("show");
-  hudName.textContent = "『" + shape.name + "』に蒔く";
-  hudLevel.textContent = "◆".repeat(shape.difficulty) + "◇".repeat(5 - shape.difficulty);
-  hudLabel.textContent = "ひと匙 " + odai.budgetMax + "枚";
+  if (odai.塗り絵) {
+    /* 塗り絵は下絵を借りるだけ。難易度もひと匙も出さない */
+    hudName.textContent = "『" + shape.name + "』を塗る";
+  } else {
+    hudName.textContent = "『" + shape.name + "』に蒔く";
+    hudLevel.textContent = "◆".repeat(shape.difficulty) + "◇".repeat(5 - shape.difficulty);
+    hudLabel.textContent = "ひと匙 " + odai.budgetMax + "枚";
+  }
   hudFill.style.width = "100%";
 }
 
 /* お題を開始。
    pick に数字を渡すとその型、true なら別の型を引く、false なら今の型のまま */
-function startOdai(pick) {
+function startOdai(pick) { 型を出す(pick, false); }
+
+/* 塗り絵を開始。型は下絵として出すだけで、ひと匙も採点も無い */
+function startNurie(pick) { 型を出す(pick, true); }
+
+function 型を出す(pick, 塗り絵) {
   odai.active = true;
+  odai.塗り絵 = !!塗り絵;
   if (typeof pick === "number") {
     odai.shapeIdx = Math.max(0, Math.min(SHAPES.length - 1, pick | 0));
   } else if (pick) {
@@ -1773,6 +1832,7 @@ function startOdai(pick) {
   resetRound();
   hideHint();                 /* 案内文が型に重なるので消す */
   hud.classList.add("show");
+  hud.classList.toggle("nurie", odai.塗り絵);
   お題ボタンの名前("自由へ");
   指をお題向けにする();
 }
@@ -1785,8 +1845,10 @@ function お題ボタンの名前(名) {
 /* お題モードを抜ける(作品はそのまま残す) */
 function endOdai() {
   odai.active = false;
+  odai.塗り絵 = false;
   odai.result = null;
   hud.classList.remove("show");
+  hud.classList.remove("nurie");
   resultEl.classList.remove("show");
   お題ボタンの名前("お題");
   指をお題向けにする();
@@ -1830,6 +1892,7 @@ function showBook() {
   }).join("");
   const table = document.getElementById("book-table");
   table.innerHTML = rows;
+  帳の札を描く(g);
   hideHint();        /* 帳の裏に案内文が透けるので消す */
   消す確認 = false;
   document.getElementById("btn-book-clear").textContent = "記録を消す";
@@ -1837,13 +1900,40 @@ function showBook() {
 }
 
 
-/* 帳の行を押したら、その型でお題を始める */
+/* 帳で型を押したとき、お題を始めるか塗り絵を始めるか */
+let 帳の手 = "お題";
+const nurieBtn = document.getElementById("btn-nurie");
+const bookHint = document.getElementById("book-hint");
+
+function 帳の札を描く(g) {
+  nurieBtn.classList.toggle("locked", !塗り絵の鍵);
+  nurieBtn.classList.toggle("on", 塗り絵の鍵 && 帳の手 === "塗り絵");
+  if (!塗り絵の鍵) {
+    帳の手 = "お題";
+    nurieBtn.textContent = "塗り絵 ── 皆伝で開きます (名人の型 " + g.done + "/" + g.of + ")";
+  } else {
+    nurieBtn.textContent = 帳の手 === "塗り絵"
+      ? "塗り絵 ── 型を下絵に、好きなだけ"
+      : "塗り絵にする";
+  }
+  bookHint.textContent = 帳の手 === "塗り絵"
+    ? "型を押すと、その型を下絵に塗れます"
+    : "型を押すと、その型で始まります";
+}
+
+nurieBtn.addEventListener("click", () => {
+  if (!塗り絵の鍵) { toast("全部の型で名人になると開きます"); return; }
+  帳の手 = 帳の手 === "塗り絵" ? "お題" : "塗り絵";
+  帳の札を描く(Core.grade(records, SHAPES.length));
+});
+
 document.getElementById("book-table").addEventListener("click", (e) => {
   const tr = e.target.closest("tr[data-shape]");
   if (!tr) return;
   bookEl.classList.remove("show");
   if (odai.active) endOdai();
-  startOdai(Number(tr.dataset.shape));
+  const i = Number(tr.dataset.shape);
+  if (帳の手 === "塗り絵" && 塗り絵の鍵) startNurie(i); else startOdai(i);
 });
 
 /* 記録を消す。取り返しがつかないので、二度押しで確かめる */
@@ -1882,7 +1972,7 @@ function toast(text) {
 /* 払う:積もった箔を全部流す。
    お題の最中は採点が絡むので、同じ型でのやり直しにする */
 document.getElementById("btn-clear").addEventListener("click", () => {
-  if (settled.length === 0 && flakes.length === 0 && sliding.length === 0 && !odai.active) {
+  if (settled.length === 0 && flakes.length === 0 && sliding.length === 0 && !採点中()) {
     toast("まだ何も蒔かれていません");
     return;
   }
@@ -1890,7 +1980,7 @@ document.getElementById("btn-clear").addEventListener("click", () => {
   消えゆく.length = 0;
   baseCtx.clearRect(0, 0, W, H);   /* 記録から溢れて下地へ焼いたぶんも消す */
   washAway();
-  if (odai.active) resetRound();   /* ひと匙も戻す */
+  if (採点中()) resetRound();   /* ひと匙も戻す */
 });
 
 /* 画面回転などでサイズが変わったら、型と升目を敷き直す */
@@ -1900,7 +1990,7 @@ window.addEventListener("resize", () => {
 
 /* 貼り付いた箔の内外を記録(stampFlakeから呼ばれる) */
 function odaiRecord(f) {
-  if (!odai.active || odai.result) return;
+  if (!採点中() || odai.result) return;
   const w = f.size * f.size;   /* 面積の重み */
   if (hitCtx.isPointInPath(odai.tPath, f.x, f.y)) {
     odai.inW += w;
@@ -1930,6 +2020,7 @@ function judgeOdai() {
   const 塗り替え = prev && Core.rankValue(rank) > Core.rankValue(prev.rank);
   records = Core.applyResult(records, shape.name, result);
   saveRecords();
+  鍵を見直す(true);
 
   document.getElementById("result-rank").textContent = rank;
   document.getElementById("result-detail").textContent =
@@ -2079,7 +2170,7 @@ window.addEventListener("pointerdown", (e) => {
 
 for (const [id, やること] of [["btn-slide", "ずらす"], ["btn-erase", "消す"]]) {
   document.getElementById(id).addEventListener("click", () => {
-    if (odai.active) { toast("お題の間は使えません"); return; }
+    if (採点中()) { toast("お題の間は使えません"); return; }
     手 = やること;
     指を選ぶ(id);
   });
@@ -2088,9 +2179,9 @@ for (const [id, やること] of [["btn-slide", "ずらす"], ["btn-erase", "消
 /* お題では採点が絡む。ずらす・消すを切って、蒔く手に戻す */
 function 指をお題向けにする() {
   for (const id of ["btn-slide", "btn-erase"]) {
-    document.getElementById(id).classList.toggle("disabled", odai.active);
+    document.getElementById(id).classList.toggle("disabled", 採点中());
   }
-  if (odai.active && 手 !== "蒔く") {
+  if (採点中() && 手 !== "蒔く") {
     手 = "蒔く";
     指を選ぶ(swatches[currentPalette]);
   }
@@ -2349,7 +2440,7 @@ function frame(now) {
   drawShapeOutline();
 
   /* お題の採点:匙が尽き、すべての箔が落ち切ったら少し間を置いて判定 */
-  if (odai.active && !odai.result && odai.budget <= 0 &&
+  if (採点中() && !odai.result && odai.budget <= 0 &&
       flakes.length === 0 && !washing) {
     odai.settleTimer += dt;
     if (odai.settleTimer > 0.8) judgeOdai();
@@ -2398,7 +2489,9 @@ window.__app = {
   isTitleUp() { return titleUp; },
   dismissTitle,
   get records() { return records; },
-  setRecords(r) { records = Core.reviveRecords(r); saveRecords(); },
+  setRecords(r) { records = Core.reviveRecords(r); saveRecords(); 鍵を見直す(false); },
+  /* 塗り絵の鍵が開いているか(テストから覗く) */
+  isNurieUnlocked() { return 塗り絵の鍵; },
   /* 積もった箔だけを写し取る。きらめきや舞っている箔、型の輪郭が
      混ざらないので、テストで作品そのものを測るのに使う */
   sedimentSnapshot() {
@@ -2410,6 +2503,8 @@ window.__app = {
   /* 型を指定してお題を始める(実機で「上手に蒔いたときのこぼれ」を
      測り直すときに使う。型を足したら必ず測り直すこと) */
   startShape(i) { startOdai(i); },
+  /* 型を指定して塗り絵を始める */
+  startNurie(i) { startNurie(i); },
   /* 型を指定して組み直す(採点の当たり判定に使うPath2Dが手に入る) */
   useShape(i) {
     odai.shapeIdx = i;

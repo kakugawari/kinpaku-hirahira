@@ -458,6 +458,21 @@
     return { name: GRADES[i], done, of: shapeCount };
   }
 
+  /* ------------------------------------------------------------
+     塗り絵の鍵
+     ------------------------------------------------------------
+     全部の型で名人 = 皆伝 になったら開く。免許皆伝なので、もう採点は
+     要らない ―― 型の下絵だけ借りて、好きなだけ蒔いてよい、という筋。
+
+     一度開いたら閉じない。段位は記録から計算しているので、そのまま
+     つなぐと「記録を消す」でせっかく開いた物が閉じてしまう。
+     開いたかどうかは記録とは別に持ち、ここでは前の状態を受け取る
+     ------------------------------------------------------------ */
+  function nurieUnlocked(rec, shapeCount, 開いていた) {
+    if (開いていた) return true;
+    return grade(rec, shapeCount).name === GRADES[4];
+  }
+
   /* 保存されていた記録を読む。壊れていても必ず使える形で返す */
   function reviveRecords(raw) {
     const base = emptyRecords();
@@ -500,6 +515,6 @@
     area, perimeter, bbox, contains, compactness, normalize, convexHull, concavity,
     SHAPE_DEFS, buildShapes,
     budgetFor, missRatio, spillMaxFor, difficultyOf, judge, rankValue, RANK_ORDER, REACHED,
-    emptyRecords, applyResult, grade, reviveRecords, GRADES,
+    emptyRecords, applyResult, grade, reviveRecords, GRADES, nurieUnlocked,
   };
 })(typeof module !== "undefined" && module.exports ? module.exports : (this.window || globalThis));

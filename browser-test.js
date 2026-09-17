@@ -1485,6 +1485,115 @@ async function run() {
     }
     await ctx輪.close();
 
+    /* ------------------------------------------------------------------
+       見張り ⑳: 塗り絵は、全部の型で名人(皆伝)になってから開く
+
+       ・鍵は記録とは別に持つ。記録から直に出すと「記録を消す」で閉じる
+       ・塗り絵では、ひと匙も採点も無い。型は下絵として出るだけ
+       ・閉じているあいだも、何をすれば開くかは見せる
+       ------------------------------------------------------------------ */
+    section('塗り絵は皆伝で開く (見張り⑳)');
+    const ctx塗 = await browser.newContext({ ...DEVICE });
+    const p塗 = await ctx塗.newPage();
+    p塗.on('pageerror', (e) => errors.push('見張り⑳: ' + e.message));
+    await 開く(p塗);
+
+    const 帳を開く = async () => {
+      await p塗.evaluate(() => {
+        const b = document.getElementById('book');
+        if (b.classList.contains('show')) b.classList.remove('show');
+      });
+      await p塗.click('#btn-book');
+      await p塗.waitForTimeout(250);
+      return p塗.evaluate(() => ({
+        鍵: window.__app.isNurieUnlocked(),
+        札: document.getElementById('btn-nurie').textContent,
+        押せない: document.getElementById('btn-nurie').classList.contains('locked'),
+      }));
+    };
+    /* 名人を n 型ぶん積む */
+    const 名人を積む = (n) => p塗.evaluate((k) => {
+      const C = window.__app.Core, S = window.__app.SHAPES;
+      let r = C.emptyRecords();
+      for (let i = 0; i < k; i++) r = C.applyResult(r, S[i].name, { rank: '名人', fill: 0.9, spill: 0.1 });
+      window.__app.setRecords(r);
+      return S.length;
+    }, n);
+
+    const 初め = await 帳を開く();
+    ok(初め.鍵 === false && 初め.押せない && /0\/\d+/.test(初め.札),
+      `始めは閉じていて、何をすれば開くか出ている (${初め.札})`);
+
+    const 型数 = await 名人を積む(0);
+    await 名人を積む(型数 - 1);
+    const 手前 = await 帳を開く();
+    ok(手前.鍵 === false && 手前.押せない,
+      `名人 ${型数 - 1}/${型数} 型では、まだ開かない (${手前.札})`);
+
+    await 名人を積む(型数);
+    const 開いた = await 帳を開く();
+    ok(開いた.鍵 === true && !開いた.押せない,
+      `名人 ${型数}/${型数} 型で開く (${開いた.札})`);
+
+    /* 塗り絵に切り替えて、型を押す */
+    await p塗.click('#btn-nurie');
+    await p塗.waitForTimeout(200);
+    await p塗.click('#book-table tr[data-shape="0"]');
+    await p塗.waitForTimeout(700);
+    const 始まり = await p塗.evaluate(() => ({
+      塗り絵: window.__app.odai.塗り絵,
+      型が出ている: window.__app.odai.active && !!window.__app.odai.outline,
+      名: document.getElementById('odai-name').textContent,
+      ゲージ: getComputedStyle(document.getElementById('odai-gauge')).display,
+      難易度: getComputedStyle(document.getElementById('odai-level')).display,
+      ずらす: !document.getElementById('btn-slide').classList.contains('disabled'),
+      消す: !document.getElementById('btn-erase').classList.contains('disabled'),
+    }));
+    ok(始まり.塗り絵 && 始まり.型が出ている,
+      `型を押すと、その型を下絵に塗り絵が始まる (${始まり.名})`);
+    ok(始まり.ゲージ === 'none' && 始まり.難易度 === 'none',
+      `塗り絵にひと匙と難易度は出ない (匙 ${始まり.ゲージ} / 難 ${始まり.難易度})`);
+    ok(始まり.ずらす && 始まり.消す, '塗り絵では、ずらす・消すが使える');
+
+    /* 蒔いても匙は減らず、採点も出ない */
+    const 匙前 = await p塗.evaluate(() => window.__app.odai.budget);
+    await p塗.mouse.move(CX, Math.round(V.height * 0.35));
+    await p塗.mouse.down();
+    await p塗.waitForTimeout(2500);
+    await p塗.mouse.up();
+    await p塗.waitForTimeout(4000);
+    const 蒔いた後 = await p塗.evaluate(() => ({
+      匙: window.__app.odai.budget,
+      積もり: window.__app.settled.length,
+      採点: !!window.__app.odai.result,
+      結果が出た: document.getElementById('result').classList.contains('show'),
+    }));
+    ok(蒔いた後.積もり > 200 && 蒔いた後.匙 === 匙前,
+      `塗り絵では匙が減らない (${匙前} → ${蒔いた後.匙} / 積もり ${蒔いた後.積もり}枚)`);
+    ok(!蒔いた後.採点 && !蒔いた後.結果が出た, '塗り絵では採点が出ない');
+
+    /* 記録を消しても、開き直しても閉じない */
+    await p塗.click('#btn-book');
+    await p塗.waitForTimeout(200);
+    await p塗.click('#btn-book-clear');
+    await p塗.click('#btn-book-clear');
+    await p塗.waitForTimeout(300);
+    const 消した後 = await p塗.evaluate(() => ({
+      鍵: window.__app.isNurieUnlocked(),
+      名人: Object.values(window.__app.records.best).filter((b) => b.rank === '名人').length,
+    }));
+    /* 帳の札そのものも見る。鍵を記録から直に出す作りに戻すと、
+       ここで札が「閉じている」表示に戻ってしまう */
+    const 消した後の札 = await 帳を開く();
+    ok(消した後.鍵 === true && 消した後.名人 === 0 && !消した後の札.押せない,
+      `記録を消しても閉じない (名人の型 ${消した後.名人} / 札「${消した後の札.札}」)`);
+
+    await 開き直す(p塗);
+    const 開き直し = await 帳を開く();
+    ok(開き直し.鍵 === true && !開き直し.押せない,
+      `開き直しても開いたまま (${開き直し.札})`);
+    await ctx塗.close();
+
     // ------------------------------------------------ アイコン
     section('アイコン');
     const apple = await phone.evaluate(() =>

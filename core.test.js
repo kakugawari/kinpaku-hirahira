@@ -221,6 +221,30 @@ test("段位: 名人を取れた型の数で上がり、全型で皆伝", () => 
   assert.equal(C.grade(r, n).name, "皆伝");
 });
 
+test("塗り絵の鍵: 全部の型で名人になって開く", () => {
+  let r = C.emptyRecords();
+  const n = shapes.length;
+  assert.equal(C.nurieUnlocked(r, n, false), false, "何もしていないのに開いている");
+  for (let i = 0; i < n - 1; i++) {
+    r = C.applyResult(r, shapes[i].name, { rank: "名人", fill: 0.9, spill: 0.1 });
+    assert.equal(C.nurieUnlocked(r, n, false), false,
+      `名人 ${i + 1}/${n} 型で開いてしまっている`);
+  }
+  r = C.applyResult(r, shapes[n - 1].name, { rank: "名人", fill: 0.9, spill: 0.1 });
+  assert.equal(C.nurieUnlocked(r, n, false), true, `名人 ${n}/${n} 型でも開かない`);
+});
+
+test("塗り絵の鍵: 一度開いたら、記録を消しても閉じない", () => {
+  /* 段位は記録から出るので、そのままつなぐと「記録を消す」で閉じてしまう */
+  assert.equal(C.nurieUnlocked(C.emptyRecords(), shapes.length, true), true);
+});
+
+test("塗り絵の鍵: 職人止まりでは開かない", () => {
+  let r = C.emptyRecords();
+  for (const s of shapes) r = C.applyResult(r, s.name, { rank: "職人", fill: 0.9, spill: 0.1 });
+  assert.equal(C.nurieUnlocked(r, shapes.length, false), false);
+});
+
 test("記録の読み込み: 壊れていても必ず使える形で返る", () => {
   for (const junk of [null, undefined, 42, "こわれた", [], { best: "ちがう" },
                       { meijin: -5, rounds: NaN }, { best: { 駒: { rank: "将軍" } } }]) {
