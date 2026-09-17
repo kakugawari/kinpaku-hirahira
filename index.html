@@ -126,7 +126,8 @@
   #palette.open #palette-list {
     margin-top: 6px;
     padding: 6px 0 6px 16px;
-    max-height: 260px; opacity: 1;
+    max-height: 340px; opacity: 1;    /* 1行46px x 5 + 余白 が入る高さ */
+    opacity: 1;
     pointer-events: auto;
   }
   /* 品書きの左に立てる細い柱。上下に菱の留めを置く */
@@ -137,13 +138,15 @@
       rgba(214,186,130,0), rgba(214,186,130,0.5), rgba(214,186,130,0));
   }
   /* 品書きの1行は「丸 + 名前」を横に並べる。
-     下の帯の .swatch は縦並びなので、こちらを強く書いて上書きする */
+     下の帯の .swatch は縦並びなので、こちらを強く書いて上書きする。
+     1行 96x30px では押しにくかった(指の目安は 44pt)。
+     丸を 34px にして、行の高さを 46px 取る */
   #palette-list .swatch {
-    flex-direction: row; align-items: center; gap: 9px;
-    min-width: 96px; padding: 3px 6px;
-    font-size: 13px; letter-spacing: 0.18em;
+    flex-direction: row; align-items: center; gap: 11px;
+    min-width: 124px; min-height: 46px; padding: 4px 8px;
+    font-size: 14px; letter-spacing: 0.18em;
   }
-  #palette-list .foil { width: 24px; height: 24px; }
+  #palette-list .foil { width: 34px; height: 34px; }
   #palette-list .cap { padding-bottom: 0; }
   #palette-list .swatch.active .cap::after { display: none; }
   #palette-list .swatch.active .foil {
