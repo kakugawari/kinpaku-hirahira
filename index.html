@@ -45,7 +45,8 @@
      箔も道具も「絵 + 名前」の縦並びで揃える。
      いま選んでいる箔は、輪の光と名前の下の線で示す ===== */
   #bar {
-    position: fixed; bottom: 0; left: 0; right: 0;
+    /* 同じく、足りないぶんだけ下へ下げて、画面のいちばん下に着ける */
+    position: fixed; bottom: calc(-1 * var(--足りない, 0px)); left: 0; right: 0;
     display: flex; align-items: flex-end; justify-content: center;
     gap: 7px;
     padding: 12px 8px calc(10px + env(safe-area-inset-bottom, 0px));
@@ -310,6 +311,8 @@
      遊ぶ画面は真っ黒に保ちたいので、雰囲気づくりはここに寄せる */
   #title-screen {
     position: fixed; inset: 0;
+    /* iOS が渡す高さが足りないぶんを足して、画面の下まで絵を届かせる */
+    height: calc(100% + var(--足りない, 0px));
     z-index: 50;
     display: flex; align-items: flex-end; justify-content: center;
     background: #000000;          /* 絵が届くまでの下地 */
@@ -486,7 +489,46 @@ const baseCtx = baseCv.getContext("2d");
 let W = 0, H = 0, DPR = 1;
 
 /* ----- 端末解像度に合わせてCanvasを設定(リサイズ時は積もった箔を引き継ぐ) ----- */
+/* ============================================================
+   画面の高さが足りないぶんを測って、下に足す
+   ------------------------------------------------------------
+   ホーム画面から開くと、iOS が渡してくる高さが上の安全域ぶん足りない
+   ことがある。実機で測った値は:
+     描ける 430x873 / 端末 430x932 / 安全域 上59 下34 / 差 59
+   env(safe-area-inset-top) は 59 と正しく返るのに、window.innerHeight は
+   932 ではなく 873。中身は画面のいちばん上から並ぶので、59pt がそのまま
+   下の空きになる (apple-mobile-web-app-status-bar-style が
+   black-translucent のときの iOS の癖)。
+
+   決め打ちで 59 を足すと、iOS が直したときに逆に 59 はみ出す。
+   毎回その場で測り、ホーム画面から開いたときだけ、0〜80px の範囲で足す。
+   ============================================================ */
+let 足りない高さ = 0;
+let 足りない高さの上書き = null;   /* テストから試すときだけ使う */
+
+function 足りない高さを測る() {
+  if (足りない高さの上書き !== null) return 足りない高さの上書き;
+  const ホーム画面から =
+    window.navigator.standalone === true ||
+    window.matchMedia("(display-mode: standalone)").matches;
+  /* ブラウザで開いているときの差は、アドレス帯などの取り分。足してはいけない */
+  if (!ホーム画面から) return 0;
+  /* 横向きでは screen の縦横が入れ替わる端末がある */
+  const 端末の高さ = window.innerHeight > window.innerWidth
+    ? Math.max(screen.width, screen.height)
+    : Math.min(screen.width, screen.height);
+  const 差 = Math.round(端末の高さ - window.innerHeight);
+  return Math.max(0, Math.min(80, 差));
+}
+
+/* 足りないぶんを CSS へ渡す。タイトルの絵と下の操作帯が、これを見て伸びる */
+function 画面を伸ばす(px) {
+  足りない高さ = Math.max(0, Math.min(80, Math.round(px)));
+  document.documentElement.style.setProperty("--足りない", 足りない高さ + "px");
+}
+
 function resize() {
+  画面を伸ばす(足りない高さを測る());
   const oldW = sedCv.width, oldH = sedCv.height;
   let old = null;
   if (oldW > 0 && oldH > 0) {
@@ -496,7 +538,7 @@ function resize() {
     old.getContext("2d").drawImage(sedCv, 0, 0);
   }
   DPR = Math.min(window.devicePixelRatio || 1, 2);
-  W = window.innerWidth; H = window.innerHeight;
+  W = window.innerWidth; H = window.innerHeight + 足りない高さ;
   cv.width  = W * DPR; cv.height  = H * DPR;
   cv.style.width = W + "px"; cv.style.height = H + "px";
   sedCv.width = W * DPR; sedCv.height = H * DPR;
@@ -1475,6 +1517,7 @@ function 画面の診断() {
     "端末 " + screen.width + "x" + screen.height,
     "安全域 上" + 安全域[0] + " 下" + 安全域[1],
     "差 " + 差,
+    "足す " + 足りない高さ,
     開き方,
     window.devicePixelRatio + "倍",
   ].join(" / ");
@@ -1984,6 +2027,9 @@ window.__app = {
   flakes, settled, sliding, sparkles, odai, SHAPES,
   Core,
   slidePush, PUSH_RADIUS, SETTLE_MIN, SETTLE_SPAN,
+  /* 足りない高さを手で入れて、伸びるかどうかを試すための入口 */
+  試しに伸ばす(px) { 足りない高さの上書き = px; resize(); return 足りない高さ; },
+  get 足りない高さ() { return 足りない高さ; },
   bladePush, distToPath, BLADE_R,
   titleFlakes,
   isTitleUp() { return titleUp; },

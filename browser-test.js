@@ -1080,6 +1080,59 @@ async function run() {
       `寄せても箔は消えない、前へ移っただけ (${寄せる前の枚数} → ${寄せた後の枚数} 枚)`);
     await ctxH.close();
 
+    /* ------------------------------------------------------------------
+       見張り ⑱: 渡された高さが足りなくても、画面の下まで届く
+
+       ホーム画面から開くと、iOS が渡してくる高さが上の安全域ぶん足りない
+       ことがある。実機で測った値は「描ける 430x873 / 端末 430x932 /
+       安全域 上59 下34」。中身は上から並ぶので、59pt がそのまま下の空きに
+       なり、タイトルの絵は 873pt で切れ、操作帯もそこで止まっていた。
+
+       足りないぶんを測って下に足す作りにしたので、ここでは手で 59 を
+       入れて、絵・操作帯・画布が画面の下(932)まで伸びるかを見る。
+       ------------------------------------------------------------------ */
+    section('高さが足りなくても下まで届く (見張り⑱)');
+    const ctxV = await browser.newContext({ ...DEVICE });
+    const pv = await ctxV.newPage();
+    pv.on('pageerror', (e) => errors.push('見張り⑱: ' + e.message));
+    await pv.goto(URL);
+    await pv.waitForFunction(() => window.__app);
+
+    const 下端 = () => pv.evaluate(() => {
+      const 下 = (id) => Math.round(document.getElementById(id).getBoundingClientRect().bottom);
+      return {
+        描ける: innerHeight,
+        足す: window.__app.足りない高さ,
+        絵: 下('title-art'), 覆い: 下('title-screen'),
+        画布: Math.round(document.getElementById('cv').getBoundingClientRect().height),
+        帯: 下('bar'),
+      };
+    });
+
+    const そのまま = await 下端();
+    ok(そのまま.足す === 0 &&
+       そのまま.絵 === そのまま.描ける && そのまま.帯 === そのまま.描ける,
+      `足りていれば、そのまま画面の下まで (絵 ${そのまま.絵} / 帯 ${そのまま.帯} / 画面 ${そのまま.描ける})`);
+
+    await pv.evaluate(() => window.__app.試しに伸ばす(59));
+    await pv.waitForTimeout(250);
+    const 伸ばした = await 下端();
+    const 端末の下 = 伸ばした.描ける + 59;
+    ok(伸ばした.足す === 59, `足りないぶんを足す (${伸ばした.足す}px)`);
+    ok(伸ばした.絵 === 端末の下 && 伸ばした.覆い === 端末の下,
+      `タイトルの絵が画面の下まで届く (${伸ばした.絵} / 端末の下 ${端末の下})`);
+    ok(伸ばした.帯 === 端末の下,
+      `操作帯が画面のいちばん下に着く (${伸ばした.帯} / 端末の下 ${端末の下})`);
+    ok(伸ばした.画布 === 端末の下,
+      `蒔ける面も画面の下まで (${伸ばした.画布} / 端末の下 ${端末の下})`);
+
+    /* 足しすぎない: ありえない値を渡しても 80px で止める */
+    await pv.evaluate(() => window.__app.試しに伸ばす(500));
+    await pv.waitForTimeout(200);
+    ok(await pv.evaluate(() => window.__app.足りない高さ) === 80,
+      '足しすぎない (上限 80px)');
+    await ctxV.close();
+
     // ------------------------------------------------ アイコン
     section('アイコン');
     const apple = await phone.evaluate(() =>
