@@ -284,18 +284,6 @@
   }
   #book-buttons { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
 
-  /* ===== 診断の1行(一時) =====
-     実機でだけ画面の下に空きが出る。ここから公開ページを開けないので、
-     端末が返す数字をこの目で見るために置いている。原因が分かったら消す */
-  #book-diag {
-    color: rgba(200,190,170,0.5);
-    font-size: 10px; letter-spacing: 0.02em;
-    font-family: ui-monospace, Menlo, monospace;
-    text-align: center; line-height: 1.5;
-    border-top: 1px solid rgba(255,255,255,0.08);
-    padding-top: 8px;
-    word-break: break-all;
-  }
 
   /* 写したときの知らせ */
   #toast {
@@ -456,8 +444,6 @@
   <div id="book-summary"></div>
   <table id="book-table"></table>
   <div id="book-hint">型を押すと、その型で始まります</div>
-  <!-- 画面の大きさの診断。原因が分かったら消す -->
-  <div id="book-diag"></div>
   <div id="book-buttons">
     <button class="btn" id="btn-book-clear">記録を消す</button>
     <button class="btn" id="btn-book-close">閉じる</button>
@@ -469,11 +455,6 @@
 "use strict";
 
 const Core = window.KinpakuCore;
-
-/* 端末に届いている版。診断の1行に出す。
-   「直したのに変わらない」のが、届いていないせいなのか、直し方が
-   外れているせいなのか、これが無いと切り分けられなかった */
-const 版 = "v14";
 
 /* ============================================================
    金箔散らし
@@ -1480,56 +1461,9 @@ function showBook() {
   hideHint();        /* 帳の裏に案内文が透けるので消す */
   消す確認 = false;
   document.getElementById("btn-book-clear").textContent = "記録を消す";
-  document.getElementById("book-diag").textContent = 画面の診断();
   bookEl.classList.add("show");
 }
 
-/* ===== 診断の1行(一時) =====
-   実機だけ画面の下に空きが出る(タイトルで59pt、遊ぶ画面で105pt)。
-   手もとのブラウザでは 0pt で再現しないので、端末が返す数字を見るために置く。
-   安全域は JS から直接読めないので、その幅を padding に入れた見えない箱を
-   作って、計算後の値を読み取る。原因が分かったらこの関数ごと消す */
-function 画面の診断() {
-  const 測り = document.createElement("div");
-  測り.style.cssText =
-    "position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;" +
-    "padding:env(safe-area-inset-top) env(safe-area-inset-right)" +
-    " env(safe-area-inset-bottom) env(safe-area-inset-left);";
-  document.body.appendChild(測り);
-  const c = getComputedStyle(測り);
-  const 数 = (v) => Math.round(parseFloat(v) || 0);
-  const 安全域 = [数(c.paddingTop), 数(c.paddingBottom), 数(c.paddingLeft), 数(c.paddingRight)];
-  測り.remove();
-
-  const 開き方 = navigator.standalone === true ? "ホーム画面"
-    : (matchMedia("(display-mode: standalone)").matches ? "standalone" : "ブラウザ");
-
-  /* 100vh などが何pxになるかを実際に測る。
-     渡された高さ(innerHeight)より大きければ、その単位で画面の下まで描ける。
-     どの手で直せるかは、ここが分かれ道になる */
-  const 単位 = (名) => {
-    const 箱 = document.createElement("div");
-    箱.style.cssText =
-      "position:fixed;left:0;top:0;width:1px;visibility:hidden;height:100" + 名 + ";";
-    document.body.appendChild(箱);
-    const h = Math.round(箱.getBoundingClientRect().height);
-    箱.remove();
-    return h;
-  };
-
-  return [
-    "描ける " + innerWidth + "x" + innerHeight,
-    "端末 " + screen.width + "x" + screen.height,
-    "安全域 上" + 安全域[0] + " 下" + 安全域[1],
-    "vh" + 単位("vh") + " dvh" + 単位("dvh") + " lvh" + 単位("lvh") + " %" + 単位("%"),
-    "外" + Math.round(window.outerHeight || 0),
-    "見え" + Math.round((window.visualViewport && window.visualViewport.height) || 0),
-    "位置" + Math.round(window.screenY || 0),
-    "下余白" + (getComputedStyle(document.documentElement).getPropertyValue("--下の余白") || "?").trim(),
-    開き方,
-    版,
-  ].join(" / ");
-}
 
 /* 帳の行を押したら、その型でお題を始める */
 document.getElementById("book-table").addEventListener("click", (e) => {
