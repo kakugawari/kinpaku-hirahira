@@ -1630,12 +1630,16 @@ function drawSliding() {
    計算で決まる(core.js)。手で数字を振らない */
 const SHAPES = Core.buildShapes();
 
-/* 点列から Path2D を作る */
-function pathOf(points, m) {
+/* 輪の集まりから Path2D を作る。
+   型は「輪(閉じた点列)の配列」で持つ。丸2個のように離れた形もあるので、
+   輪ごとに moveTo からやり直す(つなげて描くと、輪と輪のあいだに線が出る) */
+function pathOf(rings, m) {
   const p = new Path2D();
-  p.moveTo(points[0][0], points[0][1]);
-  for (let i = 1; i < points.length; i++) p.lineTo(points[i][0], points[i][1]);
-  p.closePath();
+  for (const points of rings) {
+    p.moveTo(points[0][0], points[0][1]);
+    for (let i = 1; i < points.length; i++) p.lineTo(points[i][0], points[i][1]);
+    p.closePath();
+  }
   const out = new Path2D();
   out.addPath(p, m);
   return out;
@@ -1693,25 +1697,30 @@ function buildShapeGeometry() {
   const s = Math.min(W, H) * 0.32;          /* 型の大きさ */
   const cx = W / 2, cy = H * 0.42;          /* 少し上寄りに置く(下は操作帯) */
   const m = new DOMMatrix().translate(cx, cy).scale(s);
-  odai.tPath = pathOf(SHAPES[odai.shapeIdx].points, m);
+  odai.tPath = pathOf(SHAPES[odai.shapeIdx].rings, m);
 
   /* 目安の帯を引くために、型が画面のどこに来たか覚えておく */
-  const pts = SHAPES[odai.shapeIdx].points;
+  const rings = SHAPES[odai.shapeIdx].rings;
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const [ux, uy] of pts) {
+  for (const pts of rings) for (const [ux, uy] of pts) {
     x0 = Math.min(x0, cx + ux * s); x1 = Math.max(x1, cx + ux * s);
     y0 = Math.min(y0, cy + uy * s); y1 = Math.max(y1, cy + uy * s);
   }
   odai.bounds = { left: x0, right: x1, top: y0, bottom: y1 };
 
-  /* 輪郭を金砂で描くために、画面座標の点列と、周に沿った距離を持つ */
-  const 画面点 = pts.map(([ux, uy]) => [cx + ux * s, cy + uy * s]);
-  const 累積 = [0];
-  for (let i = 1; i <= 画面点.length; i++) {
-    const a = 画面点[i - 1], b = 画面点[i % 画面点.length];
-    累積.push(累積[i - 1] + Math.hypot(b[0] - a[0], b[1] - a[1]));
+  /* 輪郭を金砂で描くために、辺を1本ずつ並べ、周に沿った距離を持つ。
+     点列ひとつながりで持つと、離れた輪と輪のあいだにも辺ができてしまい、
+     何もない所へ金砂が並ぶ。辺の列にしておけば、そこは端から無い */
+  const 辺 = [], 累積 = [0];
+  for (const pts of rings) {
+    const 画面点 = pts.map(([ux, uy]) => [cx + ux * s, cy + uy * s]);
+    for (let i = 0; i < 画面点.length; i++) {
+      const a = 画面点[i], b = 画面点[(i + 1) % 画面点.length];
+      辺.push([a, b]);
+      累積.push(累積[累積.length - 1] + Math.hypot(b[0] - a[0], b[1] - a[1]));
+    }
   }
-  odai.outline = { pts: 画面点, 累積, 周: 累積[累積.length - 1] };
+  odai.outline = { 辺, 累積, 周: 累積[累積.length - 1] };
 
   /* 型を覆う範囲に升目を敷き、中心が型の内側にある升だけ登録 */
   const step = s * 0.27;
@@ -1942,16 +1951,16 @@ function judgeOdai() {
   resultEl.classList.add("show");
 }
 
-/* 周に沿った距離から、輪郭上の座標を引く */
+/* 周に沿った距離から、輪郭上の座標を引く(辺の列をたどる) */
 function 輪郭の点(d) {
   const o = odai.outline;
   const t = ((d % o.周) + o.周) % o.周;
-  let lo = 0, hi = o.累積.length - 1;
+  let lo = 0, hi = o.辺.length;
   while (lo < hi - 1) {
     const mid = (lo + hi) >> 1;
     if (o.累積[mid] <= t) lo = mid; else hi = mid;
   }
-  const a = o.pts[lo], b = o.pts[(lo + 1) % o.pts.length];
+  const [a, b] = o.辺[lo];
   const 区間 = o.累積[lo + 1] - o.累積[lo] || 1;
   const k = (t - o.累積[lo]) / 区間;
   return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
@@ -2398,6 +2407,9 @@ window.__app = {
     out.getContext("2d").drawImage(sedCv, 0, 0);
     return out;
   },
+  /* 型を指定してお題を始める(実機で「上手に蒔いたときのこぼれ」を
+     測り直すときに使う。型を足したら必ず測り直すこと) */
+  startShape(i) { startOdai(i); },
   /* 型を指定して組み直す(採点の当たり判定に使うPath2Dが手に入る) */
   useShape(i) {
     odai.shapeIdx = i;

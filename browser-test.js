@@ -367,12 +367,12 @@ async function run() {
       /* 型ぜんたいが画面の中央に置かれているかは、枠の中心で見る。
          三日月は真ん中の高さの断面が左右非対称なので、断面では測れない */
       let bx0 = Infinity, bx1 = -Infinity, by0 = Infinity, by1 = -Infinity;
-      for (const [x, y] of window.__app.SHAPES[idx].points) {
+      for (const [x, y] of window.__app.SHAPES[idx].rings.flat()) {
         if (x < bx0) bx0 = x; if (x > bx1) bx1 = x;
         if (y < by0) by0 = y; if (y > by1) by1 = y;
       }
       return { 名前: names[idx], 左端, 右端, 内側の幅: +内側の幅.toFixed(2),
-               へこみ: +window.__app.Core.concavity(window.__app.SHAPES[idx].points).toFixed(3),
+               へこみ: +window.__app.Core.concavity(window.__app.SHAPES[idx].rings).toFixed(3),
                枠の中心: [+((bx0 + bx1) / 2).toFixed(3), +((by0 + by1) / 2).toFixed(3)] };
     });
     // 三日月なら、中央の高さの「肉」は外円の直径よりずっと細い。
@@ -1382,6 +1382,108 @@ async function run() {
       `下の余白が計算されている (${書き方.下の余白})`);
 
     await ctxV.close();
+
+    /* ------------------------------------------------------------------
+       見張り ⑲: 離れた輪でできた型(二つ星・三つ星・梅鉢・四つ目)
+
+       型を「ひとつながりの点列」で持っていたころの書き方のままだと、
+       輪と輪のあいだにも辺ができる。塗りにも当たり判定にも、輪郭を描く
+       金砂にも、そこに無いはずの線が出る。
+       絵で見ても気づきにくいので、輪のあいだを直に測る
+       ------------------------------------------------------------------ */
+    section('離れた輪の型に、あいだの線が出ない (見張り⑲)');
+    const ctx輪 = await browser.newContext({ ...DEVICE });
+    const p輪 = await ctx輪.newPage();
+    p輪.on('pageerror', (e) => errors.push('見張り⑲: ' + e.message));
+    await 開く(p輪);
+
+    const 離れた型 = await p輪.evaluate(() =>
+      window.__app.SHAPES.filter((s) => s.rings.length > 1).map((s) => ({ i: s.index, name: s.name })));
+    ok(離れた型.length >= 3,
+      `離れた輪でできた型がある (${離れた型.map((s) => s.name).join('・')})`);
+
+    for (const t of 離れた型) {
+      await p輪.evaluate((k) => window.__app.startShape(k), t.i);
+      await p輪.waitForTimeout(700);
+      const 見 = await p輪.evaluate(() => {
+        const A = window.__app, o = A.odai, b = o.bounds;
+        const s = A.SHAPES[o.shapeIdx];
+
+        /* (1) 輪をまたぐ辺が無いこと。
+           輪をつないで1本の点列にすると、輪と輪を結ぶ長い辺ができる。
+           「型の大きさの何分の一」で見ると、四つ目のように辺そのものが
+           長い型で落ちてしまうので、その型の輪の中にある辺の最長と比べる */
+        const 枠 = (() => {
+          let x0 = Infinity, y0 = Infinity, x1 = -Infinity;
+          for (const r of s.rings) for (const [x, y] of r) {
+            if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y;
+          }
+          return { x0, y0, 倍率: (b.right - b.left) / (x1 - x0) };
+        })();
+        const 倍率 = 枠.倍率;
+        /* 型そのものの辺を、画面座標で組み直す。画面に描かれている辺
+           (o.outline.辺) を使うと、つなぎの線そのものを「輪郭」と見なして
+           しまい、そのまわりを測らなくなる */
+        const 正しい辺 = [];
+        for (const r of s.rings) {
+          const 画面 = r.map(([ux, uy]) =>
+            [b.left + (ux - 枠.x0) * 倍率, b.top + (uy - 枠.y0) * 倍率]);
+          for (let i = 0; i < 画面.length; i++) 正しい辺.push([画面[i], 画面[(i + 1) % 画面.length]]);
+        }
+        let 輪の中の最長 = 0;
+        for (const r of s.rings) {
+          for (let i = 0; i < r.length; i++) {
+            const a = r[i], c = r[(i + 1) % r.length];
+            輪の中の最長 = Math.max(輪の中の最長, Math.hypot(c[0] - a[0], c[1] - a[1]) * 倍率);
+          }
+        }
+        let 最長 = 0;
+        for (const [p, q] of o.outline.辺) 最長 = Math.max(最長, Math.hypot(q[0] - p[0], q[1] - p[1]));
+
+        /* (2) 「型の外で、輪郭の線から 22px 以上離れた所」が暗いこと。
+           輪と輪を結ぶ線が引かれていれば、そこは何もないはずの場所なのに
+           金砂が並んで光る。輪郭のすぐ脇を測ると、正しくても光ってしまう。
+           離れ方は、点ではなく線分までの距離で測る。四つ目のように辺が
+           長い型では、角から離れていても辺の真上、ということがある */
+        const 線分まで = (x, y, [p, q]) => {
+          const dx = q[0] - p[0], dy = q[1] - p[1];
+          const L = dx * dx + dy * dy;
+          let t = L ? ((x - p[0]) * dx + (y - p[1]) * dy) / L : 0;
+          t = t < 0 ? 0 : (t > 1 ? 1 : t);
+          const ex = p[0] + dx * t - x, ey = p[1] + dy * t - y;
+          return ex * ex + ey * ey;
+        };
+        const cv = document.getElementById('cv');
+        const d = cv.getContext('2d');
+        const 比 = cv.width / innerWidth;
+        let 最大 = 0, 測った = 0;
+        for (let x = b.left - 30; x <= b.right + 30; x += 6) {
+          for (let y = b.top - 30; y <= b.bottom + 30; y += 6) {
+            if (A.isInsideShape(x, y)) continue;
+            let 近さ = Infinity;
+            for (const e of 正しい辺) {
+              const dd = 線分まで(x, y, e);
+              if (dd < 近さ) 近さ = dd;
+              if (近さ < 22 * 22) break;
+            }
+            if (近さ < 22 * 22) continue;
+            測った++;
+            const px = d.getImageData(Math.round(x * 比), Math.round(y * 比), 3, 3).data;
+            for (let i = 0; i < px.length; i += 4) 最大 = Math.max(最大, px[i], px[i + 1], px[i + 2]);
+          }
+        }
+        return {
+          輪: s.rings.length,
+          最長の辺: Math.round(最長), 輪の中の最長: Math.round(輪の中の最長),
+          何もない所: 測った, 何もない所の明るさ: 最大,
+        };
+      });
+      ok(見.最長の辺 <= 見.輪の中の最長 + 1,
+        `${t.name}: 輪${見.輪}つをまたぐ辺がない (いちばん長い辺 ${見.最長の辺}px / 輪の中は最長 ${見.輪の中の最長}px)`);
+      ok(見.何もない所 > 50 && 見.何もない所の明るさ < 40,
+        `${t.name}: 何もない所に金砂が出ていない (${見.何もない所}点を測って 明るさ ${見.何もない所の明るさ})`);
+    }
+    await ctx輪.close();
 
     // ------------------------------------------------ アイコン
     section('アイコン');

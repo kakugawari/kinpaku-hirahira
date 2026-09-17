@@ -9,6 +9,11 @@
      逆向きに描いてレンズ形になっている、という間違いに気づけなかった。
      多角形の点列にすれば、面積も細さもひと匙の量も計算で出せる。
      「あとで目で見て確かめる」より「計算で決まる」方が強い。
+
+   ■ 型は「輪(閉じた点列)の配列」
+     二つ星や梅鉢のように、離れた丸でできた型がある。点列ひとつながりで
+     持つと、輪と輪のあいだにも辺ができてしまう。輪の配列にしておけば、
+     面積は足し算、内外は輪ごとの偶奇で、そのまま正しく出る。
    ============================================================ */
 (function (root) {
   "use strict";
@@ -57,6 +62,21 @@
     return d > 0 ? Math.sqrt(d) : 0;
   }
 
+  /* 円をひとつ。丸を並べた型に使う */
+  function circle(cx, cy, r, n) {
+    return arcPts(cx, cy, r, 0, Math.PI * 2, false, n).slice(0, n);
+  }
+
+  /* ---------- 型は「輪」の集まり ----------
+     丸2個のように離れた形も持てるよう、型は輪(閉じた点列)の配列にする。
+     ひとつながりの型は、輪が1本なだけ。
+     内外は偶奇で決める ―― 離れた輪なら「どれか1つの内側」、入れ子の輪なら
+     「穴」になり、どちらも同じ式で正しく出る。
+     ring〜 が輪ひとつ、それ以外は輪の集まりを受け取る ---------- */
+
+  /* build() は 1本の輪でも、輪の配列でも返してよい */
+  function toRings(v) { return (typeof v[0][0] === "number") ? [v] : v; }
+
   /* ---------- 多角形の性質(すべて計算で出す) ---------- */
 
   /* 符号つき面積の2倍。点の並び順も分かる */
@@ -69,9 +89,9 @@
     return s;
   }
 
-  function area(pts) { return Math.abs(shoelace(pts)) / 2; }
+  function ringArea(pts) { return Math.abs(shoelace(pts)) / 2; }
 
-  function perimeter(pts) {
+  function ringPerimeter(pts) {
     let p = 0;
     for (let i = 0; i < pts.length; i++) {
       const [x1, y1] = pts[i], [x2, y2] = pts[(i + 1) % pts.length];
@@ -80,29 +100,46 @@
     return p;
   }
 
-  function bbox(pts) {
+  /* 離れた輪どうしは重ならない約束なので、面積は足すだけでよい */
+  function area(rings) {
+    let a = 0;
+    for (const r of rings) a += ringArea(r);
+    return a;
+  }
+
+  function perimeter(rings) {
+    let p = 0;
+    for (const r of rings) p += ringPerimeter(r);
+    return p;
+  }
+
+  function bbox(rings) {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const [x, y] of pts) {
+    for (const pts of rings) for (const [x, y] of pts) {
       if (x < x0) x0 = x; if (x > x1) x1 = x;
       if (y < y0) y0 = y; if (y > y1) y1 = y;
     }
     return { x0, y0, x1, y1, w: x1 - x0, h: y1 - y0 };
   }
 
-  /* 点が内側か(奇偶判定)。当たり判定の答え合わせに使う */
-  function contains(pts, px, py) {
+  /* 点が内側か(奇偶判定)。当たり判定の答え合わせに使う。
+     輪ごとに数えるので、輪と輪のあいだに線は引かれない */
+  function contains(rings, px, py) {
     let inside = false;
-    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-      const [xi, yi] = pts[i], [xj, yj] = pts[j];
-      if ((yi > py) !== (yj > py) &&
-          px < (xj - xi) * (py - yi) / (yj - yi) + xi) inside = !inside;
+    for (const pts of rings) {
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const [xi, yi] = pts[i], [xj, yj] = pts[j];
+        if ((yi > py) !== (yj > py) &&
+            px < (xj - xi) * (py - yi) / (yj - yi) + xi) inside = !inside;
+      }
     }
     return inside;
   }
 
-  /* 凸包(輪ゴムをかけた形)。へこみがあるか調べるのに使う */
-  function convexHull(pts) {
-    const p = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  /* 凸包(輪ゴムをかけた形)。へこみがあるか調べるのに使う。
+     輪の集まりを受け取り、輪ひとつ(点列)を返す */
+  function convexHull(rings) {
+    const p = rings.flat().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
     const cross = (o, a, b) => (a[0]-o[0])*(b[1]-o[1]) - (a[1]-o[1])*(b[0]-o[0]);
     const lo = [];
     for (const q of p) { while (lo.length > 1 && cross(lo[lo.length-2], lo[lo.length-1], q) <= 0) lo.pop(); lo.push(q); }
@@ -113,24 +150,24 @@
 
   /* へこみ具合。1 = でっぱりだけ(凸)、小さいほど深く欠けている。
      三日月が裏返ってレンズ形になる類の間違いは、これで捕まる */
-  function concavity(pts) {
-    const h = area(convexHull(pts));
-    return h > 0 ? area(pts) / h : 1;
+  function concavity(rings) {
+    const h = ringArea(convexHull(rings));
+    return h > 0 ? area(rings) / h : 1;
   }
 
   /* まるっこさ。円=1、細い/入り組んだ形ほど小さい */
-  function compactness(pts) {
-    const p = perimeter(pts);
-    return p > 0 ? (4 * Math.PI * area(pts)) / (p * p) : 0;
+  function compactness(rings) {
+    const p = perimeter(rings);
+    return p > 0 ? (4 * Math.PI * area(rings)) / (p * p) : 0;
   }
 
   /* 枠の中心を原点へ寄せ、長い方の辺が 2 になるよう揃える。
      どの型も画面上で同じくらいの大きさになる */
-  function normalize(pts) {
-    const b = bbox(pts);
+  function normalize(rings) {
+    const b = bbox(rings);
     const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
     const k = 2 / Math.max(b.w, b.h);
-    return pts.map(([x, y]) => [(x - cx) * k, (y - cy) * k]);
+    return rings.map((pts) => pts.map(([x, y]) => [(x - cx) * k, (y - cy) * k]));
   }
 
   /* ---------- 型 ---------- */
@@ -198,18 +235,52 @@
       /* 五弁の花。中心からの距離が角度で決まる */
       build: () => polar((a) => 0.52 + 0.48 * Math.pow(Math.abs(Math.cos(2.5 * a)), 0.7), N * 3),
     },
+
+    /* ---- ここから、離れた輪でできた型(家紋の意匠) ---- */
+    {
+      name: "二つ星",
+      /* 丸ふたつを斜めに。横に並べると、上から落としたぶんが左右へ
+         抜けてしまい (計算こぼれ 77%)、許し幅の上限 68% でも名人に
+         届かなかった。斜めなら 47% で、狙えば取れる */
+      build: () => [circle(-0.38, -0.38, 0.52, N), circle(0.38, 0.38, 0.52, N)],
+    },
+    {
+      name: "三つ星",
+      /* 丸みっつを三角に。オリオンの三つ星にちなむ紋 */
+      build: () => [-Math.PI / 2, Math.PI / 6, Math.PI * 5 / 6].map(
+        (a) => circle(Math.cos(a) * 0.56, Math.sin(a) * 0.56, 0.42, N)),
+    },
+    {
+      name: "梅鉢",
+      /* 加賀の梅鉢。中心の丸と、まわりの五弁 ―― 金沢の箔にちなんで */
+      build: () => [circle(0, 0, 0.26, N)].concat(
+        [0, 1, 2, 3, 4].map((i) => {
+          const a = -Math.PI / 2 + (Math.PI * 2 / 5) * i;
+          return circle(Math.cos(a) * 0.64, Math.sin(a) * 0.64, 0.34, N);
+        })),
+    },
+    {
+      name: "四つ目",
+      /* 四つ目結。角のある輪を四つ。丸より隅を埋めにくい */
+      build: () => {
+        const 升 = (cx, cy, h) => [[cx - h, cy - h], [cx + h, cy - h],
+                                   [cx + h, cy + h], [cx - h, cy + h]];
+        return [升(-0.5, -0.5, 0.42), 升(0.5, -0.5, 0.42),
+                升(-0.5, 0.5, 0.42), 升(0.5, 0.5, 0.42)];
+      },
+    },
   ];
 
   /* 型を組み立てて、性質を添えたものを返す */
   function buildShapes() {
     return SHAPE_DEFS.map((d, i) => {
-      const pts = normalize(d.build());
-      const a = area(pts);
-      const miss = missRatio(pts);
+      const rings = normalize(toRings(d.build()));
+      const a = area(rings);
+      const miss = missRatio(rings);
       const spillMax = spillMaxFor(miss);
       return {
-        index: i, name: d.name, points: pts,
-        area: a, compactness: compactness(pts), concavity: concavity(pts), miss,
+        index: i, name: d.name, rings,
+        area: a, compactness: compactness(rings), concavity: concavity(rings), miss,
         budget: budgetFor(a),
         spillMax,
         reached: REACHED[d.name],
@@ -259,8 +330,8 @@
      実際、入れずに決めた許し幅では三日月だけ名人に届かなかった */
   const SCATTER_U = 42 / REF_SHAPE_SIZE;
 
-  function missRatio(pts) {
-    const b = bbox(pts);
+  function missRatio(rings) {
+    const b = bbox(rings);
     const y0 = b.y0;                /* 型の上端から落とす */
     const NX = 120, ND = 120, NS = 9;
     let hit = 0, n = 0;
@@ -274,7 +345,7 @@
           const w = 1 - Math.abs(u);                      /* 山なりの重み */
           const sx = x + u * SCATTER_U;
           n += w;
-          if (contains(pts, sx, y0 + d)) hit += w;
+          if (contains(rings, sx, y0 + d)) hit += w;
         }
       }
     }
@@ -292,32 +363,41 @@
   }
 
   /* ------------------------------------------------------------
-     実機で測った「上手に蒔いたときのこぼれ」(%)
+     「上手に蒔いたときのこぼれ」(%)
      ------------------------------------------------------------
-     iPhone 16 Plus (幅430pt) で、型の上30pxから振り幅0.35でなぞった
-     ときに出た、いちばん良い値。下手に蒔けばどの型でもこぼれるが、
+     iPhone 16 Plus (幅430pt) 相当で、なぞる打ち方 (振り幅3通り x 型の
+     上10/40/80px) と狙い置き (落ち方を数えて見込みの高い所に置く) を
+     自動で流し、「埋まり 70% 以上 = 名人の条件を満たしたうちで、いちばん
+     こぼれの少なかった回」を採る。下手に蒔けばどの型でもこぼれるが、
      それは型の難しさではないので、最良だけを採る。
 
+     出し方: npm run measure  (measure.js。2周流して最良を採った)
+     2周の差: 扇 42/50・二つ星 26/33 と、ぎりぎりの型ほど振れた。
+     他は 3ポイント以内。
      ★ 型を足す・基準の大きさを変える・撒く手触りを変えたら、
-       実機で測り直すこと。1回では足りない (ぎりぎりの型ほどばらつく)
+       npm run measure で測り直すこと。1回では足りない
      ------------------------------------------------------------ */
   const REACHED = {
-    駒: 16, 亀甲: 9, 富士: 44, 扇: 51,
-    瓢箪: 20, 松: 28, 三日月: 34, 桜: 15,
+    駒: 4, 亀甲: 5, 富士: 30, 扇: 42,
+    瓢箪: 13, 松: 22, 三日月: 22, 桜: 5,
+    二つ星: 26, 三つ星: 31, 梅鉢: 20, 四つ目: 20,
   };
 
   /* 難易度は「許し幅のどこまで使ってしまうか」で決める。
      受け止めにくさだけで決めていたときは、瓢箪が◆1つ(いちばん易しい)
      なのに名人の余裕がいちばん薄い、という食い違いが出ていた。
      遊ぶ人が感じるのは、計算上の取りこぼしではなく「線までの余裕」 */
+  /* 線引きは、12型の実測 (0.11〜0.62) が 1〜5 に散るように引いた。
+     前の線引き (0.30/0.45/0.58/0.70) は、測り方を揃えたあとの値に対して
+     粗すぎて、6型が◆3に固まり◆5が一つも出なくなっていた */
   function difficultyOf(name, spillMax) {
     const reached = REACHED[name];
     if (reached === undefined || !spillMax) return 3;   /* 測っていない型は真ん中 */
     const 使う割合 = reached / (spillMax * 100);
-    if (使う割合 < 0.30) return 1;
-    if (使う割合 < 0.45) return 2;
-    if (使う割合 < 0.58) return 3;
-    if (使う割合 < 0.70) return 4;
+    if (使う割合 < 0.20) return 1;
+    if (使う割合 < 0.35) return 2;
+    if (使う割合 < 0.43) return 3;
+    if (使う割合 < 0.51) return 4;
     return 5;
   }
 
@@ -415,7 +495,8 @@
 
   root.KinpakuCore = {
     bottomGap,
-    arcPts, profile, polar, circleHalf,
+    arcPts, profile, polar, circleHalf, circle, toRings,
+    ringArea, ringPerimeter,
     area, perimeter, bbox, contains, compactness, normalize, convexHull, concavity,
     SHAPE_DEFS, buildShapes,
     budgetFor, missRatio, spillMaxFor, difficultyOf, judge, rankValue, RANK_ORDER, REACHED,

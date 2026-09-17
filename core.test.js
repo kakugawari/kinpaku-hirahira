@@ -12,33 +12,57 @@ function crosses(a, b, c, d) {
 }
 
 test("型はどれも、面積を持つ閉じた多角形になっている", () => {
-  assert.ok(shapes.length >= 8, `型が ${shapes.length} 個しかない`);
+  assert.ok(shapes.length >= 12, `型が ${shapes.length} 個しかない`);
   for (const s of shapes) {
-    assert.ok(s.points.length >= 3, `${s.name}: 点が少なすぎる`);
-    for (const [x, y] of s.points) {
-      assert.ok(Number.isFinite(x) && Number.isFinite(y), `${s.name}: 座標が数値でない`);
+    assert.ok(Array.isArray(s.rings) && s.rings.length >= 1, `${s.name}: 輪がない`);
+    for (const ring of s.rings) {
+      assert.ok(ring.length >= 3, `${s.name}: 点が少なすぎる`);
+      for (const [x, y] of ring) {
+        assert.ok(Number.isFinite(x) && Number.isFinite(y), `${s.name}: 座標が数値でない`);
+      }
     }
     assert.ok(s.area > 0.2, `${s.name}: 面積が小さすぎる (${s.area})`);
   }
 });
 
-test("型は自分自身と交差していない(ねじれた形になっていない)", () => {
-  for (const s of shapes) {
-    const p = s.points, n = p.length;
-    let bad = null;
-    for (let i = 0; i < n && !bad; i++) {
-      for (let j = i + 2; j < n; j++) {
-        if (i === 0 && j === n - 1) continue;          /* 隣どうしは除く */
-        if (crosses(p[i], p[(i + 1) % n], p[j], p[(j + 1) % n])) { bad = [i, j]; break; }
+/* 丸2個のように離れた輪でできた型が、ちゃんと離れていること。
+   輪どうしが重なっていると、面積を足し算で出しているぶんだけ多く数えて
+   しまう(ひと匙の量も許し幅も、そこから決まる) */
+test("離れた輪でできた型は、輪どうしが重なっていない", () => {
+  const 複数 = shapes.filter((s) => s.rings.length > 1);
+  assert.ok(複数.length >= 3, `離れた輪の型が ${複数.length} 個しかない`);
+  for (const s of 複数) {
+    for (let i = 0; i < s.rings.length; i++) {
+      for (const [x, y] of s.rings[i]) {
+        for (let j = 0; j < s.rings.length; j++) {
+          if (i === j) continue;
+          assert.equal(C.contains([s.rings[j]], x, y), false,
+            `${s.name}: ${i} 番目の輪が ${j} 番目に食い込んでいる`);
+        }
       }
     }
-    assert.equal(bad, null, `${s.name}: 辺 ${bad} が交差している`);
+  }
+});
+
+test("型は自分自身と交差していない(ねじれた形になっていない)", () => {
+  for (const s of shapes) {
+    for (const p of s.rings) {
+      const n = p.length;
+      let bad = null;
+      for (let i = 0; i < n && !bad; i++) {
+        for (let j = i + 2; j < n; j++) {
+          if (i === 0 && j === n - 1) continue;          /* 隣どうしは除く */
+          if (crosses(p[i], p[(i + 1) % n], p[j], p[(j + 1) % n])) { bad = [i, j]; break; }
+        }
+      }
+      assert.equal(bad, null, `${s.name}: 辺 ${bad} が交差している`);
+    }
   }
 });
 
 test("型は原点を中心に、同じ大きさへ揃えてある", () => {
   for (const s of shapes) {
-    const b = C.bbox(s.points);
+    const b = C.bbox(s.rings);
     assert.ok(Math.abs(Math.max(b.w, b.h) - 2) < 1e-9, `${s.name}: 長辺が 2 でない (${Math.max(b.w, b.h)})`);
     assert.ok(Math.abs((b.x0 + b.x1) / 2) < 1e-9, `${s.name}: 横の中心がずれている`);
     assert.ok(Math.abs((b.y0 + b.y1) / 2) < 1e-9, `${s.name}: 縦の中心がずれている`);
@@ -53,15 +77,20 @@ test("三日月には欠けがあり、亀甲はへこんでいない", () => {
   assert.ok(moon.concavity < 0.92, `三日月に欠けがない (へこみ ${moon.concavity.toFixed(3)})`);
   assert.ok(hex.concavity > 0.98, `亀甲がへこんでいる (${hex.concavity.toFixed(3)})`);
   /* 欠けている側(左)の、弦の中ほどは外にあるはず */
-  const b = C.bbox(moon.points);
-  assert.equal(C.contains(moon.points, b.x0 - 0.01, 0), false, "三日月の左外が内側になっている");
+  const b = C.bbox(moon.rings);
+  assert.equal(C.contains(moon.rings, b.x0 - 0.01, 0), false, "三日月の左外が内側になっている");
 });
 
 test("へこみ具合: 凸な形は 1、欠けた形は小さくなる", () => {
-  const 四角 = [[-1,-1],[1,-1],[1,1],[-1,1]];
-  const コの字 = [[-1,-1],[1,-1],[1,-0.4],[-0.3,-0.4],[-0.3,0.4],[1,0.4],[1,1],[-1,1]];
+  /* 形は「輪の集まり」で渡す(輪が1本でも配列にくるむ) */
+  const 四角 = [[[-1,-1],[1,-1],[1,1],[-1,1]]];
+  const コの字 = [[[-1,-1],[1,-1],[1,-0.4],[-0.3,-0.4],[-0.3,0.4],[1,0.4],[1,1],[-1,1]]];
   assert.ok(Math.abs(C.concavity(四角) - 1) < 1e-9, "四角がへこんでいることになっている");
   assert.ok(C.concavity(コの字) < 0.8, `コの字のへこみが浅すぎる (${C.concavity(コの字).toFixed(3)})`);
+  /* 離れた丸ふたつは、輪ゴムをかけると隙間ぶんだけ痩せて見える */
+  const 丸二つ = [C.circle(-0.6, 0, 0.35, 64), C.circle(0.6, 0, 0.35, 64)];
+  assert.ok(C.concavity(丸二つ) < 0.7,
+    `離れた丸ふたつのへこみが浅すぎる (${C.concavity(丸二つ).toFixed(3)})`);
 });
 
 test("ひと匙は型の広さに比例し、広い型ほど多い", () => {
@@ -118,9 +147,9 @@ test("実測の表に、余分な型が残っていない", () => {
 
 test("受け止めにくさは、型を上から見たときの当たり方から出ている", () => {
   /* 上下にまっすぐな帯は、落ちてきた箔をよく受け止める */
-  const 帯 = [[-0.2, -1], [0.2, -1], [0.2, 1], [-0.2, 1]];
+  const 帯 = [[[-0.2, -1], [0.2, -1], [0.2, 1], [-0.2, 1]]];
   /* 横に平たい板は、上から落とすとほとんど下へ抜ける */
-  const 板 = [[-1, -0.08], [1, -0.08], [1, 0.08], [-1, 0.08]];
+  const 板 = [[[-1, -0.08], [1, -0.08], [1, 0.08], [-1, 0.08]]];
   assert.ok(C.missRatio(帯) < C.missRatio(板),
     `縦長の帯 (${C.missRatio(帯).toFixed(2)}) が、平たい板 (${C.missRatio(板).toFixed(2)}) より受け止めにくいことになっている`);
   for (const pts of [帯, 板]) {
@@ -208,14 +237,14 @@ test("記録の読み込み: 壊れていても必ず使える形で返る", () 
 
 test("面積と内外判定が食い違わない(ばらまいて数える)", () => {
   for (const s of shapes) {
-    const b = C.bbox(s.points);
+    const b = C.bbox(s.rings);
     let hit = 0;
     const n = 20000;
     /* 決まった並びで散らす(毎回同じ結果になるように) */
     let seed = 12345;
     const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
     for (let i = 0; i < n; i++) {
-      if (C.contains(s.points, b.x0 + rnd() * b.w, b.y0 + rnd() * b.h)) hit++;
+      if (C.contains(s.rings, b.x0 + rnd() * b.w, b.y0 + rnd() * b.h)) hit++;
     }
     const 推定 = (hit / n) * b.w * b.h;
     assert.ok(Math.abs(推定 - s.area) / s.area < 0.05,
