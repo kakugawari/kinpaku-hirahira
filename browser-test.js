@@ -1081,56 +1081,52 @@ async function run() {
     await ctxH.close();
 
     /* ------------------------------------------------------------------
-       見張り ⑱: 渡された高さが足りなくても、画面の下まで届く
+       見張り ⑱: 操作帯の中身が、画面の外へ出ない
 
-       ホーム画面から開くと、iOS が渡してくる高さが上の安全域ぶん足りない
-       ことがある。実機で測った値は「描ける 430x873 / 端末 430x932 /
-       安全域 上59 下34」。中身は上から並ぶので、59pt がそのまま下の空きに
-       なり、タイトルの絵は 873pt で切れ、操作帯もそこで止まっていた。
+       「ホーム画面から開くと下に 59pt の空きが出る」を直そうとして、
+       帯を 59pt 下げたら、そこはウェブ画面の外だったので文字が切れた。
+       (iOS は black-translucent のとき、ウェブ画面を 430x873 で作って
+        画面の上に置く。873 より下には描けない)
 
-       足りないぶんを測って下に足す作りにしたので、ここでは手で 59 を
-       入れて、絵・操作帯・画布が画面の下(932)まで伸びるかを見る。
+       いまは上の帯の下から始めてもらう形にしてある。ここでは
+       「押せる所も文字も、渡された画面の中に収まっている」を見る。
        ------------------------------------------------------------------ */
-    section('高さが足りなくても下まで届く (見張り⑱)');
+    section('操作帯が画面の外へ出ない (見張り⑱)');
     const ctxV = await browser.newContext({ ...DEVICE });
     const pv = await ctxV.newPage();
     pv.on('pageerror', (e) => errors.push('見張り⑱: ' + e.message));
-    await pv.goto(URL);
-    await pv.waitForFunction(() => window.__app);
+    await 開く(pv);
+    await pv.waitForTimeout(300);
 
-    const 下端 = () => pv.evaluate(() => {
-      const 下 = (id) => Math.round(document.getElementById(id).getBoundingClientRect().bottom);
+    const 収まり = await pv.evaluate(() => {
+      const el = document.getElementById('bar');
+      const はみ出し = [];
+      for (const k of el.querySelectorAll('button, .cap, .foil, svg')) {
+        const b = k.getBoundingClientRect();
+        if (b.bottom > innerHeight + 0.5 || b.top < 0 || b.left < -0.5 || b.right > innerWidth + 0.5) {
+          はみ出し.push((k.id || k.className || k.tagName) + ' 下端' + Math.round(b.bottom));
+        }
+      }
       return {
-        描ける: innerHeight,
-        足す: window.__app.足りない高さ,
-        絵: 下('title-art'), 覆い: 下('title-screen'),
-        画布: Math.round(document.getElementById('cv').getBoundingClientRect().height),
-        帯: 下('bar'),
+        画面: innerHeight,
+        帯の下端: Math.round(el.getBoundingClientRect().bottom),
+        いちばん下の文字: Math.round(Math.max(...[...el.querySelectorAll('.cap')]
+          .map((c) => c.getBoundingClientRect().bottom))),
+        はみ出し,
       };
     });
+    ok(収まり.はみ出し.length === 0,
+      `操作帯の中身が画面の外へ出ない (${収まり.はみ出し.join(' / ') || '全部おさまっている'})`);
+    ok(収まり.帯の下端 <= 収まり.画面 + 0.5,
+      `帯そのものも画面の中 (下端 ${収まり.帯の下端} / 画面 ${収まり.画面})`);
+    ok(収まり.いちばん下の文字 <= 収まり.画面 - 8,
+      `いちばん下の文字が切れない (文字の下端 ${収まり.いちばん下の文字} / 画面 ${収まり.画面})`);
 
-    const そのまま = await 下端();
-    ok(そのまま.足す === 0 &&
-       そのまま.絵 === そのまま.描ける && そのまま.帯 === そのまま.描ける,
-      `足りていれば、そのまま画面の下まで (絵 ${そのまま.絵} / 帯 ${そのまま.帯} / 画面 ${そのまま.描ける})`);
-
-    await pv.evaluate(() => window.__app.試しに伸ばす(59));
-    await pv.waitForTimeout(250);
-    const 伸ばした = await 下端();
-    const 端末の下 = 伸ばした.描ける + 59;
-    ok(伸ばした.足す === 59, `足りないぶんを足す (${伸ばした.足す}px)`);
-    ok(伸ばした.絵 === 端末の下 && 伸ばした.覆い === 端末の下,
-      `タイトルの絵が画面の下まで届く (${伸ばした.絵} / 端末の下 ${端末の下})`);
-    ok(伸ばした.帯 === 端末の下,
-      `操作帯が画面のいちばん下に着く (${伸ばした.帯} / 端末の下 ${端末の下})`);
-    ok(伸ばした.画布 === 端末の下,
-      `蒔ける面も画面の下まで (${伸ばした.画布} / 端末の下 ${端末の下})`);
-
-    /* 足しすぎない: ありえない値を渡しても 80px で止める */
-    await pv.evaluate(() => window.__app.試しに伸ばす(500));
-    await pv.waitForTimeout(200);
-    ok(await pv.evaluate(() => window.__app.足りない高さ) === 80,
-      '足しすぎない (上限 80px)');
+    /* 上の帯(時計やダイナミックアイランド)の下から始めてもらう指定 */
+    const 上の帯 = await pv.evaluate(() =>
+      document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]').content);
+    ok(上の帯 === 'black',
+      `画面を上の帯の下から始める指定になっている (${上の帯})`);
     await ctxV.close();
 
     // ------------------------------------------------ アイコン
