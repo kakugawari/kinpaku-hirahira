@@ -660,15 +660,25 @@ async function run() {
       /* 6つとも「絵 + 名前」で並んでいること。
          名前が抜けたり、道具の絵が出ていなければ落ちる */
       const 中身 = await pbar.evaluate(() => {
-        const 名 = [...document.querySelectorAll('#bar button')].map((b) => ({
+        const 集める = (選択子) => [...document.querySelectorAll(選択子)].map((b) => ({
           id: b.id,
           名前: (b.querySelector('.cap') || {}).textContent || '',
           絵: !!(b.querySelector('.foil') || b.querySelector('svg')),
         }));
-        return { 名, 選ばれている: [...document.querySelectorAll('#bar .swatch.active')].map((b) => b.id) };
+        const 棚 = document.getElementById('palette').getBoundingClientRect();
+        return {
+          道具: 集める('#bar button'),
+          箔: 集める('#palette .swatch'),
+          棚の位置: { 左: Math.round(棚.left), 上: Math.round(棚.top), 下: Math.round(棚.bottom) },
+          選ばれている: [...document.querySelectorAll('#palette .swatch.active')].map((b) => b.id),
+        };
       });
-      ok(中身.名.length === 8 && 中身.名.every((k) => k.名前.trim() && k.絵),
-        `${label}: 8つとも絵と名前が揃う (${中身.名.map((k) => k.名前).join('・')})`);
+      ok(中身.道具.length === 5 && 中身.道具.every((k) => k.名前.trim() && k.絵),
+        `${label}: 帯の5つに絵と名前が揃う (${中身.道具.map((k) => k.名前).join('・')})`);
+      ok(中身.箔.length === 4 && 中身.箔.every((k) => k.名前.trim() && k.絵),
+        `${label}: 箔の棚に4種そろう (${中身.箔.map((k) => k.名前).join('・')})`);
+      ok(中身.棚の位置.左 < V.width / 3 && 中身.棚の位置.上 < V.height / 4,
+        `${label}: 箔の棚が左上にある (左${中身.棚の位置.左} / 上${中身.棚の位置.上})`);
       ok(中身.選ばれている.length === 1 && 中身.選ばれている[0] === 'sw-gold',
         `${label}: はじめは金箔が選ばれている`);
 
@@ -676,7 +686,7 @@ async function run() {
       await pbar.click('#sw-silver');
       await pbar.waitForTimeout(200);
       const 選び替え = await pbar.evaluate(() => {
-        const a = [...document.querySelectorAll('#bar .swatch.active')].map((b) => b.id);
+        const a = [...document.querySelectorAll('#palette .swatch.active')].map((b) => b.id);
         return { 印: a, 数: a.length };
       });
       ok(選び替え.数 === 1 && 選び替え.印[0] === 'sw-silver',
@@ -695,6 +705,31 @@ async function run() {
         return { 銀色, 金色 };
       });
       ok(銀.銀色 > 銀.金色 * 3, `${label}: 銀箔を選ぶと銀色が撒かれる (銀 ${銀.銀色} / 金 ${銀.金色} 画素)`);
+
+      /* 焼箔:銀箔などに熱や硫黄をかけて色を出した箔。青・紫・茶が
+         混ざるので、青が赤より強い画素が出ていれば効いている
+         (金・銀・赤金では、青が赤を上回ることはない) */
+      await pbar.click('#btn-clear');
+      await pbar.waitForTimeout(1200);
+      await pbar.click('#sw-yaki');
+      await pbar.waitForTimeout(200);
+      await pbar.mouse.move(CX, Math.round(V.height * 0.35));
+      await pbar.mouse.down(); await pbar.waitForTimeout(250); await pbar.mouse.up();
+      await pbar.waitForTimeout(1600);
+      const 焼 = await pbar.evaluate(() => {
+        const cv = document.getElementById('cv');
+        const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+        let 青い = 0, 明るい = 0;
+        for (let i = 0; i < d.length; i += 4) {
+          const r = d[i], g = d[i + 1], b = d[i + 2];
+          if (Math.max(r, g, b) < 40) continue;
+          明るい++;
+          if (b > r + 10) 青い++;
+        }
+        return { 青い, 明るい };
+      });
+      ok(焼.明るい > 200 && 焼.青い > 焼.明るい * 0.15,
+        `${label}: 焼箔を選ぶと玉虫色が撒かれる (青が強い画素 ${焼.青い} / 色のある画素 ${焼.明るい})`);
       await ctxBar.close();
     }
 

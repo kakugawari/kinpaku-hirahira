@@ -51,6 +51,19 @@
   }
   #hint.hidden { opacity: 0; }
 
+  /* ===== 箔の棚(左上) =====
+     4種になって下の帯に入らなくなったので、箔だけ左上へ移した
+     (帯は 8つで幅377px。4つ目を足すと 424px + 余白で画面 430px を超える) */
+  #palette {
+    position: absolute;
+    top: calc(12px + env(safe-area-inset-top, 0px));
+    left: 10px;
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 4px 2px;
+    z-index: 5;
+  }
+
   /* ===== 下部の操作帯 =====
      箔も道具も「絵 + 名前」の縦並びで揃える。
      いま選んでいる箔は、輪の光と名前の下の線で示す ===== */
@@ -131,6 +144,16 @@
       radial-gradient(ellipse 26% 52% at 50% 54%, rgba(236,242,248,0.5), rgba(0,0,0,0) 72%),
       conic-gradient(from 25deg at 34% 30%, #b9bec7, #eef1f5 12%, #8e949e 28%, #ffffff 44%,
                      #a9aeb8 60%, #e2e7ee 76%, #7d838d 90%, #b9bec7);
+  }
+  /* 焼箔は、青・紫・茶がぬるりと移り変わる玉虫色 */
+  #sw-yaki .foil {
+    background:
+      radial-gradient(ellipse 62% 46% at 26% 22%, rgba(214,243,255,0.85), rgba(0,0,0,0) 62%),
+      radial-gradient(ellipse 46% 34% at 73% 69%, rgba(142,90,134,0.55), rgba(0,0,0,0) 66%),
+      radial-gradient(ellipse 42% 30% at 67% 25%, rgba(12,30,48,0.6), rgba(0,0,0,0) 70%),
+      radial-gradient(ellipse 52% 34% at 21% 75%, rgba(12,30,48,0.55), rgba(0,0,0,0) 70%),
+      conic-gradient(from 25deg at 34% 30%, #2f6f8e, #3f9aa0 14%, #54468a 30%, #8e5a86 46%,
+                     #b5794a 60%, #7a5ea8 76%, #1f4a63 90%, #2f6f8e);
   }
   #sw-copper .foil {
     background:
@@ -354,12 +377,17 @@
 <body>
 
 <canvas id="cv"></canvas>
-<div id="hint">触れて蒔き なでてずらす</div>
 
-<div id="bar">
+<!-- 箔の棚。左上にまとめる -->
+<div id="palette">
   <button class="swatch active" id="sw-gold"   aria-label="金箔"><span class="foil"></span><span class="cap">金箔</span></button>
   <button class="swatch"        id="sw-silver" aria-label="銀箔"><span class="foil"></span><span class="cap">銀箔</span></button>
   <button class="swatch"        id="sw-copper" aria-label="赤金"><span class="foil"></span><span class="cap">赤金</span></button>
+  <button class="swatch"        id="sw-yaki"   aria-label="焼箔"><span class="foil"></span><span class="cap">焼箔</span></button>
+</div>
+<div id="hint">触れて蒔き なでてずらす</div>
+
+<div id="bar">
   <button class="tool hand" id="btn-slide" aria-label="ずらす">
     <!-- 指先と、その後ろに引く筋 -->
     <svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -549,6 +577,9 @@ const PALETTES = {
   gold:   { base: ["#e8c15a", "#d4a944", "#c69436", "#f0d878", "#b8862f"], glint: "#fff6d5" },
   silver: { base: ["#d9dde3", "#b9bec7", "#eef1f5", "#a9aeb8", "#c8cdd5"], glint: "#ffffff" },
   copper: { base: ["#c9722f", "#b25a26", "#e08a3c", "#d97a35", "#9c4a1e"], glint: "#ffd9b0" },
+  /* 焼箔:銀箔などに熱や硫黄をかけて色を出したもの。一枚ごとに青・紫・
+     茶・玉虫と出方が違うので、地色の候補を散らして混ぜる */
+  yaki:   { base: ["#2f6f8e", "#7a5ea8", "#b5794a", "#3f9aa0", "#54468a", "#8e5a86"], glint: "#d6f3ff" },
 };
 let currentPalette = "gold";
 
@@ -1668,7 +1699,7 @@ function drawShapeOutline() {
 /* ============================================================
    色の切り替え
    ============================================================ */
-const swatches = { gold: "sw-gold", silver: "sw-silver", copper: "sw-copper" };
+const swatches = { gold: "sw-gold", silver: "sw-silver", copper: "sw-copper", yaki: "sw-yaki" };
 /* 指がやることの並び。ここから1つだけが選ばれている */
 const 指の並び = [...Object.values(swatches), "btn-slide", "btn-erase"];
 
