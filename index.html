@@ -274,6 +274,19 @@
   }
   #book-buttons { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
 
+  /* ===== 診断の1行(一時) =====
+     実機でだけ画面の下に空きが出る。ここから公開ページを開けないので、
+     端末が返す数字をこの目で見るために置いている。原因が分かったら消す */
+  #book-diag {
+    color: rgba(200,190,170,0.5);
+    font-size: 10px; letter-spacing: 0.02em;
+    font-family: ui-monospace, Menlo, monospace;
+    text-align: center; line-height: 1.5;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    padding-top: 8px;
+    word-break: break-all;
+  }
+
   /* 写したときの知らせ */
   #toast {
     position: fixed; left: 50%; bottom: 76px;
@@ -433,6 +446,8 @@
   <div id="book-summary"></div>
   <table id="book-table"></table>
   <div id="book-hint">型を押すと、その型で始まります</div>
+  <!-- 画面の大きさの診断。原因が分かったら消す -->
+  <div id="book-diag"></div>
   <div id="book-buttons">
     <button class="btn" id="btn-book-clear">記録を消す</button>
     <button class="btn" id="btn-book-close">閉じる</button>
@@ -1429,7 +1444,40 @@ function showBook() {
   hideHint();        /* 帳の裏に案内文が透けるので消す */
   消す確認 = false;
   document.getElementById("btn-book-clear").textContent = "記録を消す";
+  document.getElementById("book-diag").textContent = 画面の診断();
   bookEl.classList.add("show");
+}
+
+/* ===== 診断の1行(一時) =====
+   実機だけ画面の下に空きが出る(タイトルで59pt、遊ぶ画面で105pt)。
+   手もとのブラウザでは 0pt で再現しないので、端末が返す数字を見るために置く。
+   安全域は JS から直接読めないので、その幅を padding に入れた見えない箱を
+   作って、計算後の値を読み取る。原因が分かったらこの関数ごと消す */
+function 画面の診断() {
+  const 測り = document.createElement("div");
+  測り.style.cssText =
+    "position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;" +
+    "padding:env(safe-area-inset-top) env(safe-area-inset-right)" +
+    " env(safe-area-inset-bottom) env(safe-area-inset-left);";
+  document.body.appendChild(測り);
+  const c = getComputedStyle(測り);
+  const 数 = (v) => Math.round(parseFloat(v) || 0);
+  const 安全域 = [数(c.paddingTop), 数(c.paddingBottom), 数(c.paddingLeft), 数(c.paddingRight)];
+  測り.remove();
+
+  const 開き方 = navigator.standalone === true ? "ホーム画面"
+    : (matchMedia("(display-mode: standalone)").matches ? "standalone" : "ブラウザ");
+  /* 端末の高さと、いま描ける高さの差。
+     画面いっぱいに使えていれば 0。59 なら上の安全域ぶん足りていない */
+  const 差 = Math.round(screen.height - innerHeight);
+  return [
+    "描ける " + innerWidth + "x" + innerHeight,
+    "端末 " + screen.width + "x" + screen.height,
+    "安全域 上" + 安全域[0] + " 下" + 安全域[1],
+    "差 " + 差,
+    開き方,
+    window.devicePixelRatio + "倍",
+  ].join(" / ");
 }
 
 /* 帳の行を押したら、その型でお題を始める */
