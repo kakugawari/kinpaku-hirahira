@@ -1471,17 +1471,29 @@ function 画面の診断() {
 
   const 開き方 = navigator.standalone === true ? "ホーム画面"
     : (matchMedia("(display-mode: standalone)").matches ? "standalone" : "ブラウザ");
-  /* 端末の高さと、いま描ける高さの差。
-     画面いっぱいに使えていれば 0。59 なら上の安全域ぶん足りていない */
-  const 差 = Math.round(screen.height - innerHeight);
+
+  /* 100vh などが何pxになるかを実際に測る。
+     渡された高さ(innerHeight)より大きければ、その単位で画面の下まで描ける。
+     どの手で直せるかは、ここが分かれ道になる */
+  const 単位 = (名) => {
+    const 箱 = document.createElement("div");
+    箱.style.cssText =
+      "position:fixed;left:0;top:0;width:1px;visibility:hidden;height:100" + 名 + ";";
+    document.body.appendChild(箱);
+    const h = Math.round(箱.getBoundingClientRect().height);
+    箱.remove();
+    return h;
+  };
+
   return [
     "描ける " + innerWidth + "x" + innerHeight,
     "端末 " + screen.width + "x" + screen.height,
     "安全域 上" + 安全域[0] + " 下" + 安全域[1],
-    "差 " + 差,
-    "位置 " + Math.round(window.screenY || 0),
+    "vh" + 単位("vh") + " dvh" + 単位("dvh") + " lvh" + 単位("lvh") + " %" + 単位("%"),
+    "外" + Math.round(window.outerHeight || 0),
+    "見え" + Math.round((window.visualViewport && window.visualViewport.height) || 0),
+    "位置" + Math.round(window.screenY || 0),
     開き方,
-    window.devicePixelRatio + "倍",
   ].join(" / ");
 }
 
