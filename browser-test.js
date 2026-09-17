@@ -703,6 +703,35 @@ async function run() {
       ok(飾り.指を通す && 飾り.届かない.length === 0,
         `${label}: 飾りごしでも道具が押せる (${飾り.届かない.length ? '届かない: ' + 飾り.届かない.join('・') : '5つとも届く'})`);
 
+      /* 狭い端末でも並びを見る。iPhone SE は 320px しかなく、ボタンを
+         大きくすると、いちばん先にここが横へ溢れる。
+         色や積もりの見張りは重いので、狭い端末では並びだけ測る */
+      const 狭い端末 = devices['iPhone SE'] || devices['iPhone 12 Mini'];
+      const ctx狭 = await browser.newContext({ ...狭い端末 });
+      const p狭 = await ctx狭.newPage();
+      p狭.on('pageerror', (e) => errors.push('見張り⑪(狭): ' + e.message));
+      await 開く(p狭);
+      await p狭.waitForTimeout(400);
+      const 狭 = await p狭.evaluate(() => {
+        const el = document.getElementById('bar');
+        const kids = [...el.children]
+          .filter((k) => getComputedStyle(k).display !== 'none')
+          .map((k) => k.getBoundingClientRect());
+        const 押す = [...el.querySelectorAll('button')].map((k) => k.getBoundingClientRect());
+        return {
+          幅: innerWidth,
+          溢れ: el.scrollWidth - Math.round(el.getBoundingClientRect().width),
+          はみ出し: kids.some((k) => k.left < -0.5 || k.right > innerWidth + 0.5),
+          一段: kids.every((k) => k.top < kids[0].bottom && k.bottom > kids[0].top),
+          最小の押し所: Math.round(Math.min(...押す.map((k) => Math.min(k.width, k.height)))),
+        };
+      });
+      await ctx狭.close();
+      ok(狭.溢れ <= 0 && !狭.はみ出し && 狭.一段,
+        `${label}: 狭い端末(${狭.幅}px)でも帯が一段に収まる (溢れ ${狭.溢れ}px)`);
+      ok(狭.最小の押し所 >= 44,
+        `${label}: 狭い端末でも指で押せる大きさ (最小 ${狭.最小の押し所}px)`);
+
       /* 6つとも「絵 + 名前」で並んでいること。
          名前が抜けたり、道具の絵が出ていなければ落ちる */
       /* 左上の棚は、ふだん「いま選んでいる箔」だけを見せ、押すと下に

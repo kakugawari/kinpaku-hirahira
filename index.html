@@ -162,7 +162,7 @@
     /* 同じ理由で absolute。根っこの下端(=画面の下)に着く */
     position: absolute; bottom: 0; left: 0; right: 0;
     display: flex; align-items: flex-end; justify-content: center;
-    gap: 4px;
+    gap: 3px;
     /* 上の 26px は飾り枠(反りのある金線)の場所。道具はその下に並べる */
     /* ホームバーに掛からないための余白。ただし、ウェブ画面の下端が
        ホームバーまで届いていなければ要らない(実機では 873 で終わり、
@@ -215,11 +215,13 @@
   #bar-frame .nami.l { left: 0; }
   #bar-frame .nami.r { right: 0; transform: scaleX(-1); }
   .swatch, .tool {
-    display: flex; flex-direction: column; align-items: center; gap: 5px;
-    min-width: 54px;             /* 指で押せる幅を切らさない */
-    padding: 2px 3px;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    /* 指で押せる幅を切らさない。狭い端末では画面なりに詰める
+       (320px 幅だと 62px x5 では横に溢れる) */
+    min-width: min(62px, 16vw);
+    padding: 3px 4px;
     background: none; border: 0;
-    font-family: inherit; font-size: 10px; letter-spacing: 0.06em;
+    font-family: inherit; font-size: 12px; letter-spacing: 0.08em;
     color: rgba(226,206,160,0.7);
     flex: 0 0 auto;              /* 詰まっても押し所を潰さない */
     cursor: pointer;
@@ -313,7 +315,7 @@
   }
 
   /* ===== 道具:線で描いた絵と名前 ===== */
-  .tool svg { display: block; width: 24px; height: 24px; }
+  .tool svg { display: block; width: 30px; height: 30px; }
   .tool:active { color: #f0d878; }
   .tool:active svg { filter: drop-shadow(0 0 7px rgba(240,216,120,0.55)); }
   .swatch:active .foil { transform: scale(1.06); }
@@ -321,7 +323,7 @@
   /* 仕切りは、細い金線のまんなかに菱を留めたもの(左上の飾り罫と同じ手) */
   .divider {
     position: relative;
-    width: 1px; height: 38px; margin-bottom: 7px;
+    width: 1px; height: 44px; margin-bottom: 7px;
     flex: 0 0 auto;
     background: linear-gradient(to bottom,
       rgba(214,186,130,0), rgba(214,186,130,0.3), rgba(214,186,130,0));
@@ -334,7 +336,7 @@
   }
   /* 指の道具(ずらす・消す)と、お品(お題・記録・払う)の境目だけは強く */
   .divider.strong {
-    height: 46px; margin-bottom: 3px;
+    height: 54px; margin-bottom: 3px;
     background: linear-gradient(to bottom,
       rgba(214,186,130,0), rgba(214,186,130,0.52), rgba(214,186,130,0));
   }
