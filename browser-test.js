@@ -1661,6 +1661,44 @@ async function run() {
       ok(!開['sw-' + f.key].閉, `名人 ${f.need} 型で ${f.name} が開く`);
     }
 
+    /* 閉じている箔の見え方。
+       「暗くする」だけだと、黒地の上ではほぼ黒い丸になり、閉じているのではなく
+       壊れているように見えた(実機で指摘された)。色は沈めつつ残し、封の菱が
+       光っていること ―― 絵の言葉ではなく、明るさで測る */
+    /* 鍵は一度開くと閉じないので、閉じた見え方はまっさらな画面で見る */
+    const ctx新 = await browser.newContext({ ...DEVICE });
+    const p新 = await ctx新.newPage();
+    await 開く(p新);
+    await p新.click('#palette-open');
+    await p新.waitForTimeout(450);
+    const 閉じた見え = [];
+    for (const f of 鍵の表) {
+      const el = await p新.$('#sw-' + f.key + ' .foil');
+      const buf = await el.screenshot();
+      const v = await p新.evaluate(async (d) => {
+        const img = new Image(); img.src = 'data:image/png;base64,' + d; await img.decode();
+        const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+        const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+        const px = g.getImageData(0, 0, c.width, c.height).data;
+        const R = c.width / 2;
+        let 和 = 0, n = 0, 最大 = 0;
+        for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) {
+          const dx = x - R, dy = y - R;
+          if (dx * dx + dy * dy > (R * 0.8) * (R * 0.8)) continue;
+          const i = (y * c.width + x) * 4;
+          const b = (px[i] + px[i + 1] + px[i + 2]) / 3;
+          和 += b; n++; if (b > 最大) 最大 = b;
+        }
+        return { 平均: Math.round(和 / n), 最大: Math.round(最大) };
+      }, buf.toString('base64'));
+      閉じた見え.push({ 名: f.name, ...v });
+    }
+    await ctx新.close();
+    ok(閉じた見え.every((v) => v.平均 >= 35 && v.平均 <= 100),
+      `閉じた箔が黒い丸になっていない (平均 ${閉じた見え.map((v) => v.名 + v.平均).join(' ')} / 開いた箔は 113〜196)`);
+    ok(閉じた見え.every((v) => v.最大 >= 140),
+      `封の菱が光っている (いちばん明るい所 ${閉じた見え.map((v) => v.名 + v.最大).join(' ')})`);
+
     /* 開いた箔は選べて、その色が撒かれる(紅焼箔は勾配を持つ) */
     await 箔を選ぶ(p箔, '#sw-' + 最後.key);
     await p箔.waitForTimeout(200);

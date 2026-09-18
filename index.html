@@ -349,11 +349,26 @@
                      #9c4470 60%, #7a4a92 76%, #8e2a3c 90%, #c03a46);
   }
 
-  /* 閉じている箔。何をすれば開くかは見せる(見えない褒美は目指せない) */
-  #palette-list .swatch.locked { opacity: 0.45; }
+  /* 閉じている箔。何をすれば開くかは見せる(見えない褒美は目指せない)。
+     ただし「暗くする」だけでは黒地の上でほぼ黒い丸になり、
+     閉じているのではなく壊れているように見えた。
+     色は沈めつつ残し、細い金の輪と菱の封で「封じてある」と分かる形にする */
+  /* 暗くするのに filter は使わない。filter は中の菱まで一緒に沈めてしまい、
+     封の印が見えなくなった(実測で印のいちばん明るい所が 124 までしか出ない)。
+     内側に暗幕を一枚かけるだけなら、上に載る菱はそのまま光る */
   #palette-list .swatch.locked .foil {
-    filter: grayscale(0.85) brightness(0.55);
-    box-shadow: inset 0 0 7px rgba(0,0,0,0.6);
+    position: relative;
+    box-shadow: inset 0 0 0 40px rgba(0,0,0,0.5),
+                inset 0 0 8px rgba(0,0,0,0.5),
+                0 0 0 1px rgba(214,186,130,0.5);
+  }
+  /* 封の菱。額や帯の飾りと同じ手 */
+  #palette-list .swatch.locked .foil::after {
+    content: ""; position: absolute; left: 50%; top: 50%;
+    width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px;
+    background: rgba(232,205,145,0.92);
+    transform: rotate(45deg);
+    box-shadow: 0 0 5px 1px rgba(0,0,0,0.75);
   }
   /* 行の高さを変えたくないので、名前と同じ行に小さく添える
      (別の行にすると閉じた箔だけ背が高くなり、並びが揃わない) */
@@ -363,7 +378,7 @@
     font-size: 10px; letter-spacing: 0.04em;
     color: rgba(214,186,130,0.6);
   }
-  #palette-list .swatch.locked .cap { color: rgba(214,196,160,0.6); }
+  #palette-list .swatch.locked .cap { color: rgba(214,196,160,0.72); }
 
   /* ===== 道具:線で描いた絵と名前 ===== */
   .tool svg { display: block; width: 30px; height: 30px; }
