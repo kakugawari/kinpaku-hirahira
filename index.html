@@ -2166,6 +2166,18 @@ document.getElementById("btn-book-clear").addEventListener("click", (e) => {
   }
   records = Core.emptyRecords();
   saveRecords();
+  /* 鍵も一緒に戻す。「記録を消す」は「最初からやり直す」の意味で押される。
+     記録だけ消えて色と塗り絵が開いたままだと、何を消したのか分からない */
+  開いた箔.clear();
+  塗り絵の鍵 = false;
+  try {
+    localStorage.removeItem(FOIL_KEY);
+    localStorage.removeItem(NURIE_KEY);
+  } catch (_) { /* 消せなくても、この場では戻っている */ }
+  if (odai.塗り絵) endOdai();                        /* 塗り絵の最中なら抜ける */
+  if (!箔が開いている(currentPalette)) 箔にする("gold");  /* 選んでいた箔が閉じたら金箔へ */
+  帳の手 = "お題";
+  品書きの鍵を描く();
   消す確認 = false;
   showBook();
   toast("記録を消しました");
@@ -2373,6 +2385,16 @@ function 品書きを開く(開く) {
   品書きを開く(!額.classList.contains("open"));
 });
 
+/* 箔を選ぶ。鍵が戻ったときに金箔へ戻すのにも使う */
+function 箔にする(key) {
+  currentPalette = key;
+  手 = "蒔く";
+  指を選ぶ(swatches[key]);
+  /* 額の箔と名前を、選んだものに差し替える */
+  額の箔.dataset.foil = key;
+  額の名.textContent = 箔の名[key];
+}
+
 for (const [key, id] of Object.entries(swatches)) {
   document.getElementById(id).addEventListener("click", (e) => {
     e.stopPropagation();
@@ -2380,12 +2402,7 @@ for (const [key, id] of Object.entries(swatches)) {
       toast("名人 " + Core.foilNeed(key) + " 型で開きます (いま " + Core.meijinCount(records) + " 型)");
       return;
     }
-    currentPalette = key;
-    手 = "蒔く";
-    指を選ぶ(id);
-    /* 額の箔と名前を、選んだものに差し替える */
-    額の箔.dataset.foil = key;
-    額の名.textContent = 箔の名[key];
+    箔にする(key);
     品書きを開く(false);      /* 選んだら閉じる */
   });
 }

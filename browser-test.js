@@ -1562,26 +1562,29 @@ async function run() {
       `塗り絵では匙が減らない (${匙前} → ${蒔いた後.匙} / 積もり ${蒔いた後.積もり}枚)`);
     ok(!蒔いた後.採点 && !蒔いた後.結果が出た, '塗り絵では採点が出ない');
 
-    /* 記録を消しても、開き直しても閉じない */
+    /* 「記録を消す」は「最初からやり直す」の意味で押される。鍵も一緒に戻る。
+       記録だけ消えて塗り絵が開いたままだと、何を消したのか分からない */
     await p塗.click('#btn-book');
     await p塗.waitForTimeout(200);
     await p塗.click('#btn-book-clear');
     await p塗.click('#btn-book-clear');
-    await p塗.waitForTimeout(300);
+    await p塗.waitForTimeout(400);
     const 消した後 = await p塗.evaluate(() => ({
       鍵: window.__app.isNurieUnlocked(),
       名人: Object.values(window.__app.records.best).filter((b) => b.rank === '名人').length,
+      塗り絵中: window.__app.odai.塗り絵,
     }));
-    /* 帳の札そのものも見る。鍵を記録から直に出す作りに戻すと、
-       ここで札が「閉じている」表示に戻ってしまう */
+    /* 帳の札そのものも見る。内部の値だけ戻して札を戻し忘れると、
+       押せそうに見えるのに押せない札が残る */
     const 消した後の札 = await 帳を開く();
-    ok(消した後.鍵 === true && 消した後.名人 === 0 && !消した後の札.押せない,
-      `記録を消しても閉じない (名人の型 ${消した後.名人} / 札「${消した後の札.札}」)`);
+    ok(消した後.鍵 === false && 消した後.名人 === 0 && 消した後の札.押せない,
+      `記録を消すと塗り絵も戻る (名人の型 ${消した後.名人} / 札「${消した後の札.札}」)`);
+    ok(消した後.塗り絵中 === false, '塗り絵の最中に消したら、塗り絵から抜ける');
 
     await 開き直す(p塗);
     const 開き直し = await 帳を開く();
-    ok(開き直し.鍵 === true && !開き直し.押せない,
-      `開き直しても開いたまま (${開き直し.札})`);
+    ok(開き直し.鍵 === false && 開き直し.押せない,
+      `開き直しても戻ったまま (${開き直し.札})`);
     await ctx塗.close();
 
     /* ------------------------------------------------------------------
@@ -1757,21 +1760,24 @@ async function run() {
     ok(玉の光 > 金の光 * 2.5,
       `玉虫箔がいちばん光る (玉虫 ${玉の光} / 金箔 ${金の光} = ${(玉の光 / Math.max(金の光, 1)).toFixed(1)}倍)`);
 
-    /* 記録を消しても閉じない */
+    /* 記録を消すと、箔の鍵も一緒に戻る。
+       選んでいた箔が閉じたときは、金箔へ戻しておく */
     await p箔.click('#btn-book');
     await p箔.waitForTimeout(200);
     await p箔.click('#btn-book-clear');
     await p箔.click('#btn-book-clear');
-    await p箔.waitForTimeout(300);
+    await p箔.waitForTimeout(400);
     await p箔.click('#btn-book-close');
     await p箔.waitForTimeout(200);
     const 箔で消した後 = await 品書き();
-    ok(鍵の表.every((f) => !箔で消した後['sw-' + f.key].閉),
-      `記録を消しても箔は閉じない (${鍵の表.filter((f) => 箔で消した後['sw-' + f.key].閉).map((f) => f.name).join('・') || '4色とも開いたまま'})`);
+    const 消した後の額 = await p箔.evaluate(() => document.getElementById('palette-name').textContent);
+    ok(鍵の表.every((f) => 箔で消した後['sw-' + f.key].閉),
+      `記録を消すと箔も戻る (${鍵の表.filter((f) => !箔で消した後['sw-' + f.key].閉).map((f) => f.name).join('・') || '4色とも未開放へ'})`);
+    ok(消した後の額 === '金箔', `閉じた箔を選んだままにしない (額は ${消した後の額})`);
 
     await 開き直す(p箔);
     const 開き直し箔 = await 品書き();
-    ok(鍵の表.every((f) => !開き直し箔['sw-' + f.key].閉), '開き直しても箔は開いたまま');
+    ok(鍵の表.every((f) => 開き直し箔['sw-' + f.key].閉), '開き直しても戻ったまま');
     await ctx箔.close();
 
     // ------------------------------------------------ アイコン

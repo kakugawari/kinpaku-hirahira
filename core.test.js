@@ -255,7 +255,9 @@ test("箔の鍵: 段位の変わり目に合わせてある", () => {
   }
 });
 
-test("箔の鍵: 一度開いたら、記録を消しても閉じない", () => {
+/* 核の関数そのものは「前に開いていたか」を受け取るだけ。
+   記録を消すときに何を渡すかは、画面の側の決めごと(いまは一緒に戻す) */
+test("箔の鍵: 前に開いていたと渡せば、記録が空でも開いている", () => {
   for (const f of C.FOIL_UNLOCK) {
     assert.equal(C.foilUnlocked(f.key, C.emptyRecords(), true), true, `${f.name} が閉じた`);
   }
@@ -295,8 +297,7 @@ test("塗り絵の鍵: 全部の型で名人になって開く", () => {
   assert.equal(C.nurieUnlocked(r, n, false), true, `名人 ${n}/${n} 型でも開かない`);
 });
 
-test("塗り絵の鍵: 一度開いたら、記録を消しても閉じない", () => {
-  /* 段位は記録から出るので、そのままつなぐと「記録を消す」で閉じてしまう */
+test("塗り絵の鍵: 前に開いていたと渡せば、記録が空でも開いている", () => {
   assert.equal(C.nurieUnlocked(C.emptyRecords(), shapes.length, true), true);
 });
 
