@@ -772,9 +772,9 @@ async function run() {
         `${label}: 品書きの1行が指で押せる高さ (最小 ${Math.min(...中身.押し所)}px)`);
       ok(中身.道具.length === 5 && 中身.道具.every((k) => k.名前.trim() && k.絵),
         `${label}: 帯の5つに絵と名前が揃う (${中身.道具.map((k) => k.名前).join('・')})`);
-      /* 5種は元から使える。あとの3種は名人を取ると開く(閉じていても並びには出す) */
-      ok(中身.箔.length === 8 && 中身.箔.every((k) => k.名前.trim() && k.絵),
-        `${label}: 品書きに8種そろう (${中身.箔.map((k) => k.名前.replace(/名人\d+型/, '')).join('・')})`);
+      /* 6種は元から使える。あとの3種は名人を取ると開く(閉じていても並びには出す) */
+      ok(中身.箔.length === 9 && 中身.箔.every((k) => k.名前.trim() && k.絵),
+        `${label}: 品書きに9種そろう (${中身.箔.map((k) => k.名前.replace(/名人\d+型/, '')).join('・')})`);
       ok(中身.棚の位置.左 < V.width / 3 && 中身.棚の位置.上 < V.height / 4,
         `${label}: 箔の棚が左上にある (左${中身.棚の位置.左} / 上${中身.棚の位置.上})`);
       ok(中身.選ばれている.length === 1 && 中身.選ばれている[0] === 'sw-gold',
@@ -816,7 +816,7 @@ async function run() {
          (金・銀・赤金では、青が赤を上回ることはない) */
       await pbar.click('#btn-clear');
       await pbar.waitForTimeout(1200);
-      await 箔を選ぶ(pbar, '#sw-yaki');
+      await 箔を選ぶ(pbar, '#sw-aoyaki');
       await pbar.waitForTimeout(200);
       await pbar.mouse.move(CX, Math.round(V.height * 0.35));
       await pbar.mouse.down(); await pbar.waitForTimeout(250); await pbar.mouse.up();
@@ -876,7 +876,7 @@ async function run() {
       });
       const いちばん開いた組 = Math.max(...組の開き);
       ok(いちばん開いた組 <= 90,
-        `${label}: 焼箔・紅焼箔の二色が、色の輪で隣どうし (いちばん開いた組 ${いちばん開いた組}度 / 全部 ${組の開き.join(',')})`);
+        `${label}: 焼箔三種の二色が、色の輪で隣どうし (いちばん開いた組 ${いちばん開いた組}度 / 全部 ${組の開き.join(',')})`);
 
       /* 青金:銀を多めに混ぜた淡い金。緑がかるので、青が赤よりはっきり弱く、
          緑は赤とほぼ並ぶ(金箔は緑が赤よりだいぶ低い) */
@@ -1070,6 +1070,23 @@ async function run() {
       return n;
     });
     ok(金 > 300, `タイトルの箔が見えている (${金} 画素)`);
+
+    /* 箔が画面の中に残っていること。
+       1コマ目の dt が負(実測 -4.04秒)のまま歩幅に掛かると、その1コマで
+       全部が ±1000px 横へ飛び、「画面の外へ出た」と見なされて上へ戻る。
+       そこから落ちてくるまで20秒ほど、ほとんど何も降ってこない画面になる。
+       明るさだけで見ると、たまたま残った数枚で通ってしまうので枚数で見る */
+    const 居場所 = await pt.evaluate(() => {
+      const f = window.__app.titleFlakes;
+      return {
+        枚数: f.length,
+        画面内: f.filter((x) => x.y > 0 && x.y < innerHeight && x.x > 0 && x.x < innerWidth).length,
+        上に固まっている: f.filter((x) => x.y < 0).length,
+      };
+    });
+    ok(居場所.画面内 >= 居場所.枚数 * 0.4,
+      `タイトルの箔が画面の中に残っている (${居場所.画面内}/${居場所.枚数}枚。` +
+      `上に戻されたもの ${居場所.上に固まっている}枚)`);
 
     // 触れると遊ぶ画面へ。その一触りで箔が撒かれていないこと
     await pt.mouse.move(CX, Math.round(V.height * 0.5));
@@ -1599,7 +1616,7 @@ async function run() {
     /* ------------------------------------------------------------------
        見張り ㉑: 箔は、名人を取った型の数で開く
 
-       ・はじめの5色は取り上げない
+       ・はじめの6色は取り上げない
        ・閉じている箔も並びには出し、あと何型で開くかを見せる
        ・閉じている箔は押しても選べない
        ・一度開いたら、記録を消しても閉じない
@@ -1637,9 +1654,9 @@ async function run() {
     }, n);
 
     const はじめ = await 品書き();
-    const 元からの = ['sw-gold', 'sw-silver', 'sw-copper', 'sw-ao', 'sw-yaki'];
+    const 元からの = ['sw-gold', 'sw-silver', 'sw-yokin', 'sw-ao', 'sw-aoyaki', 'sw-murasakiyaki'];
     ok(元からの.every((id) => はじめ[id] && !はじめ[id].閉),
-      `はじめの5色は取り上げていない (${元からの.filter((id) => はじめ[id] && はじめ[id].閉).join('・') || '5色とも使える'})`);
+      `はじめの6色は取り上げていない (${元からの.filter((id) => はじめ[id] && はじめ[id].閉).join('・') || '6色とも使える'})`);
     ok(鍵の表.every((f) => はじめ['sw-' + f.key] && はじめ['sw-' + f.key].閉 &&
                           はじめ['sw-' + f.key].札 === '未開放'),
       `閉じている箔も並びに出て、未開放と分かる (${鍵の表.map((f) => f.name + '「' + はじめ['sw-' + f.key].札 + '」').join(' / ')})`);

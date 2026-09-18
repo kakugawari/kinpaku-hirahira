@@ -222,7 +222,7 @@ test("段位: 名人を取れた型の数で上がり、全型で皆伝", () => 
 });
 
 test("箔の鍵: 名人の数で開き、はじめの5色は取り上げない", () => {
-  const 元からの箔 = ["gold", "silver", "copper", "ao", "yaki"];
+  const 元からの箔 = ["gold", "silver", "yokin", "ao", "aoyaki", "murasakiyaki"];
   let r = C.emptyRecords();
   for (const k of 元からの箔) {
     assert.equal(C.foilUnlocked(k, r, false), true, `${k} がはじめから使えない`);
@@ -259,6 +259,27 @@ test("箔の鍵: 一度開いたら、記録を消しても閉じない", () => 
   for (const f of C.FOIL_UNLOCK) {
     assert.equal(C.foilUnlocked(f.key, C.emptyRecords(), true), true, `${f.name} が閉じた`);
   }
+});
+
+test("1コマの間隔: 上も下も止める", () => {
+  assert.ok(Math.abs(C.こまの間隔(1016.6, 1000) - 0.0166) < 1e-9);  /* ふつうの1コマ */
+  assert.equal(C.こまの間隔(2000, 1000), 0.05);                  /* 長すぎる間は上で止める */
+  /* 最初の1コマは「前」より古い時刻が来ることがある(実測 -4.04秒)。
+     負のまま歩幅に掛けると -242コマぶん進み、動くものが一斉に飛ぶ */
+  assert.equal(C.こまの間隔(1000, 5040), 0);
+  assert.equal(C.こまの間隔(NaN, 1000), 0);
+  assert.equal(C.こまの間隔(1000, NaN), 0);
+});
+
+test("画面の大きさが 0 で来たら、組み直さない", () => {
+  /* 回転中などに一瞬 0 が渡ってくる。その値で組み直すと、落ちている箔が
+     どれも画面の外と見なされて上へ戻る */
+  assert.equal(C.使える大きさ(430, 739), true);
+  assert.equal(C.使える大きさ(430, 0), false);
+  assert.equal(C.使える大きさ(0, 739), false);
+  assert.equal(C.使える大きさ(0, 0), false);
+  assert.equal(C.使える大きさ(NaN, 739), false);
+  assert.equal(C.使える大きさ(430, undefined), false);
 });
 
 test("塗り絵の鍵: 全部の型で名人になって開く", () => {

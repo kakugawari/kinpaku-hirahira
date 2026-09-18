@@ -128,7 +128,7 @@
     padding: 6px 0 6px 16px;
     /* 1行 46px x 8 + 余白。狭い端末では画面なりに詰め、あふれたら
        中で送る(下の操作帯に潜り込ませない) */
-    max-height: min(400px, 58vh);
+    max-height: min(460px, 62vh);
     opacity: 1;
     overflow-y: auto;
     pointer-events: auto;
@@ -296,25 +296,36 @@
       conic-gradient(from 25deg at 34% 30%, #cfd08a, #eeecc0 12%, #b9bd78 28%, #f4f2cc 44%,
                      #c8cd84 60%, #e4e1a6 76%, #a8ad68 90%, #cfd08a);
   }
-  /* 焼箔は、青・紫・茶がぬるりと移り変わる玉虫色 */
-  [data-foil="yaki"] {
+  /* 青焼箔:浅く焼いた焼箔。青緑から藍へ */
+  [data-foil="aoyaki"] {
     background:
       radial-gradient(ellipse 62% 46% at 26% 22%, rgba(214,243,255,0.85), rgba(0,0,0,0) 62%),
-      radial-gradient(ellipse 46% 34% at 73% 69%, rgba(142,90,134,0.55), rgba(0,0,0,0) 66%),
-      radial-gradient(ellipse 42% 30% at 67% 25%, rgba(12,30,48,0.6), rgba(0,0,0,0) 70%),
-      radial-gradient(ellipse 52% 34% at 21% 75%, rgba(12,30,48,0.55), rgba(0,0,0,0) 70%),
-      conic-gradient(from 25deg at 34% 30%, #2f6f8e, #3f9aa0 14%, #54468a 30%, #8e5a86 46%,
-                     #b5794a 60%, #7a5ea8 76%, #1f4a63 90%, #2f6f8e);
+      radial-gradient(ellipse 46% 34% at 73% 69%, rgba(74,143,176,0.55), rgba(0,0,0,0) 66%),
+      radial-gradient(ellipse 42% 30% at 67% 25%, rgba(10,26,44,0.6), rgba(0,0,0,0) 70%),
+      radial-gradient(ellipse 52% 34% at 21% 75%, rgba(10,26,44,0.55), rgba(0,0,0,0) 70%),
+      conic-gradient(from 25deg at 34% 30%, #2f6f8e, #3f9aa0 14%, #3a5f9c 30%, #34477f 46%,
+                     #4a8fb0 60%, #26587d 76%, #1f4a63 90%, #2f6f8e);
   }
-  [data-foil="copper"] {
+  /* 紫焼箔:さらに焼いたもの。藍から紫、葡萄へ */
+  [data-foil="murasakiyaki"] {
     background:
-      radial-gradient(ellipse 62% 46% at 26% 22%, rgba(255,226,196,0.92) , rgba(0,0,0,0) 62%),
-      radial-gradient(ellipse 46% 34% at 73% 69%, rgba(240,170,110,0.5), rgba(0,0,0,0) 66%),
-      radial-gradient(ellipse 42% 30% at 67% 25%, rgba(74,30,6,0.5), rgba(0,0,0,0) 70%),
-      radial-gradient(ellipse 52% 34% at 21% 75%, rgba(74,30,6,0.5), rgba(0,0,0,0) 70%),
-      radial-gradient(ellipse 26% 52% at 50% 54%, rgba(240,170,110,0.5), rgba(0,0,0,0) 72%),
-      conic-gradient(from 25deg at 34% 30%, #b25a26, #e59a55 12%, #8f4318 28%, #f0b276 44%,
-                     #a8511f 60%, #d97a35 76%, #7d3a13 90%, #b25a26);
+      radial-gradient(ellipse 62% 46% at 26% 22%, rgba(236,217,255,0.85), rgba(0,0,0,0) 62%),
+      radial-gradient(ellipse 46% 34% at 73% 69%, rgba(142,90,134,0.55), rgba(0,0,0,0) 66%),
+      radial-gradient(ellipse 42% 30% at 67% 25%, rgba(24,14,44,0.6), rgba(0,0,0,0) 70%),
+      radial-gradient(ellipse 52% 34% at 21% 75%, rgba(24,14,44,0.55), rgba(0,0,0,0) 70%),
+      conic-gradient(from 25deg at 34% 30%, #54468a, #7a5ea8 14%, #8a5a9c 30%, #8e5a86 46%,
+                     #6a4f96 60%, #463a73 76%, #3a2f5e 90%, #54468a);
+  }
+  /* 洋金:真鍮の模造箔。金より鈍く、少し暗い */
+  [data-foil="yokin"] {
+    background:
+      radial-gradient(ellipse 62% 46% at 26% 22%, rgba(255,232,192,0.88) , rgba(0,0,0,0) 62%),
+      radial-gradient(ellipse 46% 34% at 73% 69%, rgba(232,163,94,0.5), rgba(0,0,0,0) 66%),
+      radial-gradient(ellipse 42% 30% at 67% 25%, rgba(66,44,6,0.55), rgba(0,0,0,0) 70%),
+      radial-gradient(ellipse 52% 34% at 21% 75%, rgba(66,44,6,0.55), rgba(0,0,0,0) 70%),
+      radial-gradient(ellipse 26% 52% at 50% 54%, rgba(228,186,110,0.45), rgba(0,0,0,0) 72%),
+      conic-gradient(from 25deg at 34% 30%, #b67128, #de9348 12%, #8c5316 28%, #e8a35e 44%,
+                     #ac6824 60%, #c47a30 76%, #7d4711 90%, #b67128);
   }
 
   /* ---- 名人を取ると開く箔 ---- */
@@ -664,9 +675,10 @@
   <div id="palette-list">
     <button class="swatch active" id="sw-gold"   aria-label="金箔"><span class="foil" data-foil="gold"></span><span class="cap">金箔</span></button>
     <button class="swatch"        id="sw-silver" aria-label="銀箔"><span class="foil" data-foil="silver"></span><span class="cap">銀箔</span></button>
-    <button class="swatch"        id="sw-copper" aria-label="赤金"><span class="foil" data-foil="copper"></span><span class="cap">赤金</span></button>
+    <button class="swatch"        id="sw-yokin"  aria-label="洋金"><span class="foil" data-foil="yokin"></span><span class="cap">洋金</span></button>
     <button class="swatch"        id="sw-ao"     aria-label="青金"><span class="foil" data-foil="ao"></span><span class="cap">青金</span></button>
-    <button class="swatch"        id="sw-yaki"   aria-label="焼箔"><span class="foil" data-foil="yaki"></span><span class="cap">焼箔</span></button>
+    <button class="swatch"        id="sw-aoyaki" aria-label="青焼箔"><span class="foil" data-foil="aoyaki"></span><span class="cap">青焼箔</span></button>
+    <button class="swatch"        id="sw-murasakiyaki" aria-label="紫焼箔"><span class="foil" data-foil="murasakiyaki"></span><span class="cap">紫焼箔</span></button>
     <!-- ここから、名人を取ると開く箔。閉じているあいだも並びには出す -->
     <button class="swatch" id="sw-dou"      aria-label="銅箔"><span class="foil" data-foil="dou"></span><span class="cap">銅箔<span class="need"></span></span></button>
     <button class="swatch" id="sw-rokusho"  aria-label="緑青箔"><span class="foil" data-foil="rokusho"></span><span class="cap">緑青箔<span class="need"></span></span></button>
@@ -908,6 +920,9 @@ function 画面の高さ() {
 }
 
 function resize() {
+  /* 一瞬 0 で来ることがある。その値で組み直すと、落ちている箔が
+     どれも「画面の外」と見なされて上へ戻ってしまう(core.js に理由) */
+  if (!Core.使える大きさ(window.innerWidth, 画面の高さ())) return;
   下の余白を決める();
   const oldW = sedCv.width, oldH = sedCv.height;
   let old = null;
@@ -937,13 +952,17 @@ resize();
 const PALETTES = {
   gold:   { base: ["#e8c15a", "#d4a944", "#c69436", "#f0d878", "#b8862f"], glint: "#fff6d5" },
   silver: { base: ["#d9dde3", "#b9bec7", "#eef1f5", "#a9aeb8", "#c8cdd5"], glint: "#ffffff" },
-  copper: { base: ["#c9722f", "#b25a26", "#e08a3c", "#d97a35", "#9c4a1e"], glint: "#ffd9b0" },
+  /* 洋金(真鍮の模造箔)。金より鈍く、少し暗い。
+     もとは「赤金」と呼んでいたが、赤金(あかがね)は銅そのものを指す言葉で、
+     銅箔と名前がぶつかっていた */
+  yokin:  { base: ["#c47a30", "#b67128", "#de9348", "#ac6824", "#965919"], glint: "#ffdfb0" },
   /* 青金:銀を多めに混ぜた金。緑がかった淡い金になる */
   ao:     { base: ["#e4e1a6", "#d6d692", "#eeecc0", "#c8cd84", "#dfe0b0"], glint: "#fbffe4" },
-  /* 焼箔:銀箔などに熱や硫黄をかけて色を出したもの。一枚ごとに青・紫・
-     茶・玉虫と出方が違うので、地色の候補を散らして混ぜる。
-     さらに1枚の中でも色が移るよう、二色の組を持たせる(下の 焼箔の勾配) */
-  yaki:   { base: ["#2f6f8e", "#7a5ea8", "#b5794a", "#3f9aa0", "#54468a", "#8e5a86"], glint: "#d6f3ff" },
+  /* 焼箔:銀箔に熱や硫黄をかけて色を出したもの。焼き加減で色が変わるので、
+     一色にまとめず焼き分ける。一枚の中でも色が移るよう、二色の組を持たせる
+     (下の 焼箔の勾配)。青焼 → 紫焼 → 紅焼 の順に、浅い焼きから深い焼きへ */
+  aoyaki: { base: ["#2f6f8e", "#3f9aa0", "#3a5f9c", "#34477f", "#4a8fb0", "#26587d"], glint: "#d6f3ff" },
+  murasakiyaki: { base: ["#54468a", "#7a5ea8", "#8a5a9c", "#8e5a86", "#6a4f96", "#463a73"], glint: "#ecd9ff" },
 
   /* ---- ここから、名人を取ると開く箔 ---- */
   /* 銅箔:本物の銅。赤金(真鍮)より深く、赤みが強い */
@@ -961,13 +980,16 @@ const PALETTES = {
 /* 組にするのは、色の輪の上で隣り合う色どうし。離れた色を混ぜると
    中間で色が抜け、実測で彩度が 0.397 → 0.295、濃い色の割合が
    37% → 14% まで落ちた */
-const YAKI_PAIRS = [
+const AOYAKI_PAIRS = [
   ["#3f9aa0", "#2f6f8e"],   /* 青緑 → 青 */
-  ["#2f6f8e", "#54468a"],   /* 青 → 藍 */
-  ["#54468a", "#7a5ea8"],   /* 藍 → 紫 */
-  ["#7a5ea8", "#8e5a86"],   /* 紫 → 葡萄 */
-  ["#8e5a86", "#b5794a"],   /* 葡萄 → 茶 */
-  ["#b5794a", "#8a6f3a"],   /* 茶 → 金茶 */
+  ["#2f6f8e", "#3a5f9c"],   /* 青 → 群青 */
+  ["#3a5f9c", "#34477f"],   /* 群青 → 藍 */
+];
+const MURASAKI_PAIRS = [
+  ["#34477f", "#54468a"],   /* 藍 → 菫 */
+  ["#54468a", "#7a5ea8"],   /* 菫 → 紫 */
+  ["#7a5ea8", "#8a5a9c"],   /* 紫 → 藤紫 */
+  ["#8a5a9c", "#8e5a86"],   /* 藤紫 → 葡萄 */
 ];
 /* 紅焼箔の組。こちらも隣り合う色どうしで組む */
 const BENI_PAIRS = [
@@ -981,11 +1003,12 @@ const BENI_PAIRS = [
    箔の記録が持つのは通し番号 gi ひとつだけなので、どちらの箔かは
    番号の位置で決まる(別々の表にすると、記録に「どの表か」まで
    持たせることになり、保存や描き直しの取り回しが増える) */
-const 勾配の組 = YAKI_PAIRS.concat(BENI_PAIRS);
+const 勾配の組 = AOYAKI_PAIRS.concat(MURASAKI_PAIRS, BENI_PAIRS);
 /* その箔が使う、通し番号の範囲 [始め, 終わり) */
 const 勾配の範囲 = {
-  yaki:     [0, YAKI_PAIRS.length],
-  beniyaki: [YAKI_PAIRS.length, 勾配の組.length],
+  aoyaki:       [0, AOYAKI_PAIRS.length],
+  murasakiyaki: [AOYAKI_PAIRS.length, AOYAKI_PAIRS.length + MURASAKI_PAIRS.length],
+  beniyaki:     [AOYAKI_PAIRS.length + MURASAKI_PAIRS.length, 勾配の組.length],
 };
 /* 大きさごとに作り分ける。ひとつの勾配を使い回すと、小さい砂子は
    二色の「中間あたり」しか拾わず、色が浅く濁って見えた */
@@ -2237,8 +2260,8 @@ function drawShapeOutline() {
    色の切り替え
    ============================================================ */
 const swatches = {
-  gold: "sw-gold", silver: "sw-silver", copper: "sw-copper",
-  ao: "sw-ao", yaki: "sw-yaki",
+  gold: "sw-gold", silver: "sw-silver", yokin: "sw-yokin", ao: "sw-ao",
+  aoyaki: "sw-aoyaki", murasakiyaki: "sw-murasakiyaki",
   dou: "sw-dou", rokusho: "sw-rokusho", beniyaki: "sw-beniyaki",
 };
 /* 指がやることの並び。ここから1つだけが選ばれている */
@@ -2252,7 +2275,8 @@ function 指を選ぶ(id) {
 
 /* 箔の名前。額と品書きで同じものを使う */
 const 箔の名 = {
-  gold: "金箔", silver: "銀箔", copper: "赤金", ao: "青金", yaki: "焼箔",
+  gold: "金箔", silver: "銀箔", yokin: "洋金", ao: "青金",
+  aoyaki: "青焼箔", murasakiyaki: "紫焼箔",
   dou: "銅箔", rokusho: "緑青箔", beniyaki: "紅焼箔",
 };
 
@@ -2432,12 +2456,13 @@ function resizeTitle() {
 resizeTitle();
 seedTitleFlakes();
 window.addEventListener("resize", () => {
+  if (!Core.使える大きさ(W, H)) return;   /* 同じ理由 */
   resizeTitle();
   if (titleUp) seedTitleFlakes();
 });
 
 function drawTitle(dt) {
-  const k = Math.min(dt, 0.05) * 60;      /* 60fps を1とした歩幅 */
+  const k = dt * 60;      /* 60fps を1とした歩幅。dt は呼ぶ側で止めてある */
 
   /* ゆっくり向きの変わる風。乱数歩行に減衰をかけて、たまに横へ流す */
   titleWind += (Math.random() - 0.5) * 0.02 * k;
@@ -2512,7 +2537,9 @@ titleEl.addEventListener("pointerdown", (e) => { e.preventDefault(); dismissTitl
 let lastT = performance.now();
 
 function frame(now) {
-  const dt = Math.min((now - lastT) / 1000, 0.05);  /* タブ復帰時の暴走防止 */
+  /* 上も下も止める。最初の1コマは「前」より古い時刻が来ることがある
+     (実測 -4.04秒)。負のまま歩幅に掛けると、動くものが一斉に飛ぶ */
+  const dt = Core.こまの間隔(now, lastT);
   lastT = now;
 
   /* タイトルが出ている間は、その裏の遊ぶ画面を描かない。
@@ -2630,7 +2657,7 @@ window.__app = {
   flakes, settled, sliding, sparkles, odai, SHAPES,
   Core,
   slidePush, PUSH_RADIUS, SETTLE_MIN, SETTLE_SPAN,
-  YAKI_PAIRS, BENI_PAIRS, 勾配の組, 勾配の範囲,
+  AOYAKI_PAIRS, MURASAKI_PAIRS, BENI_PAIRS, 勾配の組, 勾配の範囲,
   bladePush, distToPath, BLADE_R,
   titleFlakes,
   isTitleUp() { return titleUp; },
