@@ -772,8 +772,9 @@ async function run() {
         `${label}: 品書きの1行が指で押せる高さ (最小 ${Math.min(...中身.押し所)}px)`);
       ok(中身.道具.length === 5 && 中身.道具.every((k) => k.名前.trim() && k.絵),
         `${label}: 帯の5つに絵と名前が揃う (${中身.道具.map((k) => k.名前).join('・')})`);
-      ok(中身.箔.length === 5 && 中身.箔.every((k) => k.名前.trim() && k.絵),
-        `${label}: 品書きに5種そろう (${中身.箔.map((k) => k.名前).join('・')})`);
+      /* 5種は元から使える。あとの3種は名人を取ると開く(閉じていても並びには出す) */
+      ok(中身.箔.length === 8 && 中身.箔.every((k) => k.名前.trim() && k.絵),
+        `${label}: 品書きに8種そろう (${中身.箔.map((k) => k.名前.replace(/名人\d+型/, '')).join('・')})`);
       ok(中身.棚の位置.左 < V.width / 3 && 中身.棚の位置.上 < V.height / 4,
         `${label}: 箔の棚が左上にある (左${中身.棚の位置.左} / 上${中身.棚の位置.上})`);
       ok(中身.選ばれている.length === 1 && 中身.選ばれている[0] === 'sw-gold',
@@ -867,14 +868,15 @@ async function run() {
           else h = (r - g) / d + 4;
           return (h * 60 + 360) % 360;
         };
-        return window.__app.YAKI_PAIRS.map(([a, b]) => {
+        /* 焼箔と紅焼箔、どちらの組も見る */
+        return window.__app.勾配の組.map(([a, b]) => {
           const d = Math.abs(色相(a) - 色相(b));
           return Math.round(Math.min(d, 360 - d));
         });
       });
       const いちばん開いた組 = Math.max(...組の開き);
       ok(いちばん開いた組 <= 90,
-        `${label}: 焼箔の二色が、色の輪で隣どうし (いちばん開いた組 ${いちばん開いた組}度 / 全部 ${組の開き.join(',')})`);
+        `${label}: 焼箔・紅焼箔の二色が、色の輪で隣どうし (いちばん開いた組 ${いちばん開いた組}度 / 全部 ${組の開き.join(',')})`);
 
       /* 青金:銀を多めに混ぜた淡い金。緑がかるので、青が赤よりはっきり弱く、
          緑は赤とほぼ並ぶ(金箔は緑が赤よりだいぶ低い) */
@@ -1593,6 +1595,111 @@ async function run() {
     ok(開き直し.鍵 === true && !開き直し.押せない,
       `開き直しても開いたまま (${開き直し.札})`);
     await ctx塗.close();
+
+    /* ------------------------------------------------------------------
+       見張り ㉑: 箔は、名人を取った型の数で開く
+
+       ・はじめの5色は取り上げない
+       ・閉じている箔も並びには出し、あと何型で開くかを見せる
+       ・閉じている箔は押しても選べない
+       ・一度開いたら、記録を消しても閉じない
+       ------------------------------------------------------------------ */
+    section('箔は名人の数で開く (見張り㉑)');
+    const ctx箔 = await browser.newContext({ ...DEVICE });
+    const p箔 = await ctx箔.newPage();
+    p箔.on('pageerror', (e) => errors.push('見張り㉑: ' + e.message));
+    await 開く(p箔);
+
+    const 鍵の表 = await p箔.evaluate(() => window.__app.Core.FOIL_UNLOCK);
+    const 品書き = async () => {
+      await p箔.evaluate(() => {
+        if (!document.getElementById('palette').classList.contains('open')) {
+          document.getElementById('palette-open').click();
+        }
+      });
+      await p箔.waitForTimeout(350);
+      return p箔.evaluate(() => {
+        const out = {};
+        for (const b of document.querySelectorAll('#palette-list .swatch')) {
+          out[b.id] = {
+            閉: b.classList.contains('locked'),
+            札: (b.querySelector('.need') || {}).textContent || '',
+          };
+        }
+        return out;
+      });
+    };
+    const 箔で名人を積む = (n) => p箔.evaluate((k) => {
+      const C = window.__app.Core, S = window.__app.SHAPES;
+      let r = C.emptyRecords();
+      for (let i = 0; i < k; i++) r = C.applyResult(r, S[i].name, { rank: '名人', fill: 0.9, spill: 0.1 });
+      window.__app.setRecords(r);
+    }, n);
+
+    const はじめ = await 品書き();
+    const 元からの = ['sw-gold', 'sw-silver', 'sw-copper', 'sw-ao', 'sw-yaki'];
+    ok(元からの.every((id) => はじめ[id] && !はじめ[id].閉),
+      `はじめの5色は取り上げていない (${元からの.filter((id) => はじめ[id] && はじめ[id].閉).join('・') || '5色とも使える'})`);
+    ok(鍵の表.every((f) => はじめ['sw-' + f.key] && はじめ['sw-' + f.key].閉 &&
+                          はじめ['sw-' + f.key].札.includes(String(f.need))),
+      `閉じている箔も並びに出て、あと何型か見えている (${鍵の表.map((f) => f.name + はじめ['sw-' + f.key].札).join(' / ')})`);
+
+    /* 閉じている箔は押しても選べない */
+    const 最後 = 鍵の表[鍵の表.length - 1];
+    await p箔.click('#sw-' + 最後.key);
+    await p箔.waitForTimeout(300);
+    const 押した後 = await p箔.evaluate(() => document.getElementById('palette-name').textContent);
+    ok(押した後 === '金箔', `閉じている箔は押しても選べない (額は ${押した後} のまま)`);
+
+    /* 決めた数ちょうどで開く。手前では開かない */
+    for (const f of 鍵の表) {
+      await 箔で名人を積む(f.need - 1);
+      const 手前 = await 品書き();
+      ok(手前['sw-' + f.key].閉, `名人 ${f.need - 1} 型では ${f.name} は閉じたまま`);
+      await 箔で名人を積む(f.need);
+      const 開 = await 品書き();
+      ok(!開['sw-' + f.key].閉, `名人 ${f.need} 型で ${f.name} が開く`);
+    }
+
+    /* 開いた箔は選べて、その色が撒かれる(紅焼箔は勾配を持つ) */
+    await 箔を選ぶ(p箔, '#sw-' + 最後.key);
+    await p箔.waitForTimeout(200);
+    await p箔.mouse.move(CX, Math.round(V.height * 0.35));
+    /* 250ms では 65枚しか積もらず、数の下限に届かなかった */
+    await p箔.mouse.down(); await p箔.waitForTimeout(900); await p箔.mouse.up();
+    await p箔.waitForTimeout(3600);
+    const 撒けた = await p箔.evaluate(() => {
+      const A = window.__app;
+      const 範囲 = A.勾配の範囲.beniyaki;
+      const gi = A.settled.map((r) => r.gi).filter((g) => g >= 0);
+      return {
+        額: document.getElementById('palette-name').textContent,
+        積もり: A.settled.length,
+        勾配を持つ: gi.length,
+        範囲の外: gi.filter((g) => g < 範囲[0] || g >= 範囲[1]).length,
+      };
+    });
+    ok(撒けた.額 === 最後.name && 撒けた.積もり > 100,
+      `開いた箔は選べて撒ける (${撒けた.額} / ${撒けた.積もり}枚)`);
+    ok(撒けた.勾配を持つ > 100 && 撒けた.範囲の外 === 0,
+      `紅焼箔は自分の組だけを使う (勾配つき ${撒けた.勾配を持つ}枚 / 範囲の外 ${撒けた.範囲の外}枚)`);
+
+    /* 記録を消しても閉じない */
+    await p箔.click('#btn-book');
+    await p箔.waitForTimeout(200);
+    await p箔.click('#btn-book-clear');
+    await p箔.click('#btn-book-clear');
+    await p箔.waitForTimeout(300);
+    await p箔.click('#btn-book-close');
+    await p箔.waitForTimeout(200);
+    const 箔で消した後 = await 品書き();
+    ok(鍵の表.every((f) => !箔で消した後['sw-' + f.key].閉),
+      `記録を消しても箔は閉じない (${鍵の表.filter((f) => 箔で消した後['sw-' + f.key].閉).map((f) => f.name).join('・') || '3色とも開いたまま'})`);
+
+    await 開き直す(p箔);
+    const 開き直し箔 = await 品書き();
+    ok(鍵の表.every((f) => !開き直し箔['sw-' + f.key].閉), '開き直しても箔は開いたまま');
+    await ctx箔.close();
 
     // ------------------------------------------------ アイコン
     section('アイコン');

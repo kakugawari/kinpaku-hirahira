@@ -446,16 +446,49 @@
     return r;
   }
 
+  /* 名人を取れた型の数。段位も、箔の鍵も、すべてここから決まる */
+  function meijinCount(rec) {
+    return Object.values(rec.best).filter((b) => b.rank === "名人").length;
+  }
+
   /* 段位 = 名人を取れた型がいくつあるか。全部の型で名人なら皆伝 */
   const GRADES = ["無位", "初伝", "中伝", "奥伝", "皆伝"];
 
   function grade(rec, shapeCount) {
-    const done = Object.values(rec.best).filter((b) => b.rank === "名人").length;
+    const done = meijinCount(rec);
     if (done <= 0) return { name: GRADES[0], done, of: shapeCount };
     if (done >= shapeCount) return { name: GRADES[4], done, of: shapeCount };
     const step = Math.ceil(shapeCount / 3);
     const i = Math.min(3, 1 + Math.floor((done - 1) / step));
     return { name: GRADES[i], done, of: shapeCount };
+  }
+
+  /* ------------------------------------------------------------
+     箔の鍵
+     ------------------------------------------------------------
+     名人を取った型の数で、新しい箔が開く。
+     型が12なら、それぞれ 初伝(1) / 中伝(5) / 奥伝(9) に当たる。
+     はじめの5色(金箔・銀箔・赤金・青金・焼箔)は取り上げない。
+     開くのは、そこへ足す3色。
+
+     塗り絵と同じく、一度開いたら閉じない(段位は記録から出るので、
+     つなぎっぱなしだと「記録を消す」で閉じてしまう)
+     ------------------------------------------------------------ */
+  const FOIL_UNLOCK = [
+    { key: "dou",      name: "銅箔",   need: 1 },
+    { key: "rokusho",  name: "緑青箔", need: 5 },
+    { key: "beniyaki", name: "紅焼箔", need: 9 },
+  ];
+
+  /* その箔が開くのに要る名人の数。表に無い箔ははじめから使える */
+  function foilNeed(key) {
+    const u = FOIL_UNLOCK.find((f) => f.key === key);
+    return u ? u.need : 0;
+  }
+
+  function foilUnlocked(key, rec, 開いていた) {
+    if (開いていた) return true;
+    return meijinCount(rec) >= foilNeed(key);
   }
 
   /* ------------------------------------------------------------
@@ -516,5 +549,6 @@
     SHAPE_DEFS, buildShapes,
     budgetFor, missRatio, spillMaxFor, difficultyOf, judge, rankValue, RANK_ORDER, REACHED,
     emptyRecords, applyResult, grade, reviveRecords, GRADES, nurieUnlocked,
+    meijinCount, FOIL_UNLOCK, foilNeed, foilUnlocked,
   };
 })(typeof module !== "undefined" && module.exports ? module.exports : (this.window || globalThis));

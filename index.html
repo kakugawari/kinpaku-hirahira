@@ -126,8 +126,11 @@
   #palette.open #palette-list {
     margin-top: 6px;
     padding: 6px 0 6px 16px;
-    max-height: 340px; opacity: 1;    /* 1行46px x 5 + 余白 が入る高さ */
+    /* 1行 46px x 8 + 余白。狭い端末では画面なりに詰め、あふれたら
+       中で送る(下の操作帯に潜り込ませない) */
+    max-height: min(400px, 58vh);
     opacity: 1;
+    overflow-y: auto;
     pointer-events: auto;
   }
   /* 品書きの左に立てる細い柱。上下に菱の留めを置く */
@@ -313,6 +316,54 @@
       conic-gradient(from 25deg at 34% 30%, #b25a26, #e59a55 12%, #8f4318 28%, #f0b276 44%,
                      #a8511f 60%, #d97a35 76%, #7d3a13 90%, #b25a26);
   }
+
+  /* ---- 名人を取ると開く箔 ---- */
+  /* 銅箔:本物の銅。赤金より深く、赤みが強い */
+  [data-foil="dou"] {
+    background:
+      radial-gradient(ellipse 62% 46% at 26% 22%, rgba(255,210,180,0.9), rgba(0,0,0,0) 62%),
+      radial-gradient(ellipse 46% 34% at 73% 69%, rgba(214,130,90,0.5), rgba(0,0,0,0) 66%),
+      radial-gradient(ellipse 42% 30% at 67% 25%, rgba(56,18,4,0.55), rgba(0,0,0,0) 70%),
+      radial-gradient(ellipse 52% 34% at 21% 75%, rgba(56,18,4,0.55), rgba(0,0,0,0) 70%),
+      conic-gradient(from 25deg at 34% 30%, #8e3f22, #c2704a 12%, #6e2c12 28%, #d2825a 44%,
+                     #95492a 60%, #a85434 76%, #5e2410 90%, #8e3f22);
+  }
+  /* 緑青箔:銅に古色。青みの緑 */
+  [data-foil="rokusho"] {
+    background:
+      radial-gradient(ellipse 62% 46% at 26% 22%, rgba(214,246,234,0.85), rgba(0,0,0,0) 62%),
+      radial-gradient(ellipse 46% 34% at 73% 69%, rgba(120,200,176,0.5), rgba(0,0,0,0) 66%),
+      radial-gradient(ellipse 42% 30% at 67% 25%, rgba(10,50,42,0.55), rgba(0,0,0,0) 70%),
+      radial-gradient(ellipse 52% 34% at 21% 75%, rgba(10,50,42,0.5), rgba(0,0,0,0) 70%),
+      conic-gradient(from 25deg at 34% 30%, #3d7f6e, #6fb79f 12%, #2f6b5c 28%, #83c8b0 44%,
+                     #4e9a86 60%, #5aa894 76%, #24564a 90%, #3d7f6e);
+  }
+  /* 紅焼箔:焼箔の赤寄り。緋・紅・葡萄・金茶が移る */
+  [data-foil="beniyaki"] {
+    background:
+      radial-gradient(ellipse 62% 46% at 26% 22%, rgba(255,222,210,0.85), rgba(0,0,0,0) 62%),
+      radial-gradient(ellipse 46% 34% at 73% 69%, rgba(156,68,112,0.5), rgba(0,0,0,0) 66%),
+      radial-gradient(ellipse 42% 30% at 67% 25%, rgba(48,10,20,0.6), rgba(0,0,0,0) 70%),
+      radial-gradient(ellipse 52% 34% at 21% 75%, rgba(48,10,20,0.55), rgba(0,0,0,0) 70%),
+      conic-gradient(from 25deg at 34% 30%, #c03a46, #d0563f 14%, #d99a4e 30%, #b5794a 46%,
+                     #9c4470 60%, #7a4a92 76%, #8e2a3c 90%, #c03a46);
+  }
+
+  /* 閉じている箔。何をすれば開くかは見せる(見えない褒美は目指せない) */
+  #palette-list .swatch.locked { opacity: 0.45; }
+  #palette-list .swatch.locked .foil {
+    filter: grayscale(0.85) brightness(0.55);
+    box-shadow: inset 0 0 7px rgba(0,0,0,0.6);
+  }
+  /* 行の高さを変えたくないので、名前と同じ行に小さく添える
+     (別の行にすると閉じた箔だけ背が高くなり、並びが揃わない) */
+  #palette-list .swatch .need { display: none; }
+  #palette-list .swatch.locked .need {
+    display: inline; margin-left: 7px;
+    font-size: 10px; letter-spacing: 0.04em;
+    color: rgba(214,186,130,0.6);
+  }
+  #palette-list .swatch.locked .cap { color: rgba(214,196,160,0.6); }
 
   /* ===== 道具:線で描いた絵と名前 ===== */
   .tool svg { display: block; width: 30px; height: 30px; }
@@ -601,6 +652,10 @@
     <button class="swatch"        id="sw-copper" aria-label="赤金"><span class="foil" data-foil="copper"></span><span class="cap">赤金</span></button>
     <button class="swatch"        id="sw-ao"     aria-label="青金"><span class="foil" data-foil="ao"></span><span class="cap">青金</span></button>
     <button class="swatch"        id="sw-yaki"   aria-label="焼箔"><span class="foil" data-foil="yaki"></span><span class="cap">焼箔</span></button>
+    <!-- ここから、名人を取ると開く箔。閉じているあいだも並びには出す -->
+    <button class="swatch" id="sw-dou"      aria-label="銅箔"><span class="foil" data-foil="dou"></span><span class="cap">銅箔<span class="need"></span></span></button>
+    <button class="swatch" id="sw-rokusho"  aria-label="緑青箔"><span class="foil" data-foil="rokusho"></span><span class="cap">緑青箔<span class="need"></span></span></button>
+    <button class="swatch" id="sw-beniyaki" aria-label="紅焼箔"><span class="foil" data-foil="beniyaki"></span><span class="cap">紅焼箔<span class="need"></span></span></button>
   </div>
 </div>
 <div id="hint">触れて蒔き なでてずらす</div>
@@ -874,6 +929,14 @@ const PALETTES = {
      茶・玉虫と出方が違うので、地色の候補を散らして混ぜる。
      さらに1枚の中でも色が移るよう、二色の組を持たせる(下の 焼箔の勾配) */
   yaki:   { base: ["#2f6f8e", "#7a5ea8", "#b5794a", "#3f9aa0", "#54468a", "#8e5a86"], glint: "#d6f3ff" },
+
+  /* ---- ここから、名人を取ると開く箔 ---- */
+  /* 銅箔:本物の銅。赤金(真鍮)より深く、赤みが強い */
+  dou:      { base: ["#a85434", "#8e3f22", "#c2704a", "#95492a", "#7a3418"], glint: "#ffc9a0" },
+  /* 緑青箔:銅箔に古色をつけたもの。青みの緑になる */
+  rokusho:  { base: ["#4e9a86", "#3d7f6e", "#6fb79f", "#2f6b5c", "#5aa894"], glint: "#c7f0e2" },
+  /* 紅焼箔:焼箔の赤寄り。緋・紅・葡萄・金茶が一枚の中で移る */
+  beniyaki: { base: ["#c03a46", "#d0563f", "#9c4470", "#b5794a", "#7a4a92", "#d99a4e"], glint: "#ffd9d0" },
 };
 
 /* 焼箔の、1枚の中での色の移り。実物も熱のかけ方で縁と中で色が変わる。
@@ -891,10 +954,35 @@ const YAKI_PAIRS = [
   ["#8e5a86", "#b5794a"],   /* 葡萄 → 茶 */
   ["#b5794a", "#8a6f3a"],   /* 茶 → 金茶 */
 ];
+/* 紅焼箔の組。こちらも隣り合う色どうしで組む */
+const BENI_PAIRS = [
+  ["#d99a4e", "#b5794a"],   /* 金 → 金茶 */
+  ["#b5794a", "#d0563f"],   /* 金茶 → 緋 */
+  ["#d0563f", "#c03a46"],   /* 緋 → 紅 */
+  ["#c03a46", "#9c4470"],   /* 紅 → 葡萄 */
+  ["#9c4470", "#7a4a92"],   /* 葡萄 → 菫 */
+];
+/* 勾配を持つ箔が2種になったので、組の表は1本につなぐ。
+   箔の記録が持つのは通し番号 gi ひとつだけなので、どちらの箔かは
+   番号の位置で決まる(別々の表にすると、記録に「どの表か」まで
+   持たせることになり、保存や描き直しの取り回しが増える) */
+const 勾配の組 = YAKI_PAIRS.concat(BENI_PAIRS);
+/* その箔が使う、通し番号の範囲 [始め, 終わり) */
+const 勾配の範囲 = {
+  yaki:     [0, YAKI_PAIRS.length],
+  beniyaki: [YAKI_PAIRS.length, 勾配の組.length],
+};
 /* 大きさごとに作り分ける。ひとつの勾配を使い回すと、小さい砂子は
    二色の「中間あたり」しか拾わず、色が浅く濁って見えた */
 const YAKI_SIZES = [2, 4, 7, 11, 15];
 const 勾配の棚 = new WeakMap();
+
+/* 一枚ぶんの勾配の番号。勾配を持たない箔は -1 */
+function 勾配の番号(key) {
+  const 範囲 = 勾配の範囲[key];
+  if (!範囲) return -1;
+  return 範囲[0] + ((Math.random() * (範囲[1] - 範囲[0])) | 0);
+}
 
 function 焼箔の勾配(c, i, size) {
   let 棚 = 勾配の棚.get(c);
@@ -904,9 +992,9 @@ function 焼箔の勾配(c, i, size) {
   for (let k = 1; k < YAKI_SIZES.length; k++) {
     if (Math.abs(YAKI_SIZES[k] - size) < Math.abs(YAKI_SIZES[段] - size)) 段 = k;
   }
-  const 番 = (i % YAKI_PAIRS.length) * YAKI_SIZES.length + 段;
+  const 番 = (i % 勾配の組.length) * YAKI_SIZES.length + 段;
   if (!棚[番]) {
-    const [a, b] = YAKI_PAIRS[i % YAKI_PAIRS.length];
+    const [a, b] = 勾配の組[i % 勾配の組.length];
     const r = YAKI_SIZES[段];
     const g = c.createLinearGradient(-r, -r, r, r);
     /* 端は色を残したまま、真ん中だけで移す。全体を通して混ぜると、
@@ -972,7 +1060,7 @@ function makeFlake(x, y, big) {
     verts,
     color: colors[(Math.random() * colors.length) | 0],
     /* 焼箔だけ、1枚の中で色が移る。どの組で移るかは1枚ごとに引く */
-    gi: currentPalette === "yaki" ? (Math.random() * YAKI_PAIRS.length) | 0 : -1,
+    gi: 勾配の番号(currentPalette),
     glint: PALETTES[currentPalette].glint,
     settleY: y + SETTLE_MIN + Math.random() * SETTLE_SPAN,   /* この高さまで落ちたら貼り付く */
   };
@@ -1728,17 +1816,35 @@ loadRecords();
    せっかく開いた物が閉じてしまう
    ------------------------------------------------------------ */
 const NURIE_KEY = "kinpaku-nurie-v1";
+const FOIL_KEY = "kinpaku-foils-v1";
 let 塗り絵の鍵 = false;
+let 開いた箔 = new Set();
 try { 塗り絵の鍵 = localStorage.getItem(NURIE_KEY) === "1"; } catch (_) { /* 読めなくても遊べる */ }
+try {
+  const 保存 = localStorage.getItem(FOIL_KEY);
+  if (保存) 開いた箔 = new Set(保存.split(",").filter(Boolean));
+} catch (_) { /* 同上 */ }
+
+function 箔が開いている(key) { return Core.foilUnlocked(key, records, 開いた箔.has(key)); }
 
 function 鍵を見直す(知らせる) {
+  /* 箔。開いたものは書き留めて、記録を消しても閉じないようにする */
+  for (const f of Core.FOIL_UNLOCK) {
+    if (開いた箔.has(f.key)) continue;
+    if (!Core.foilUnlocked(f.key, records, false)) continue;
+    開いた箔.add(f.key);
+    try { localStorage.setItem(FOIL_KEY, [...開いた箔].join(",")); } catch (_) { /* 容量超過などは諦める */ }
+    if (知らせる) toast(Core.grade(records, SHAPES.length).name + "。" + f.name + "が開きました");
+  }
+  品書きの鍵を描く();
+
+  /* 塗り絵 */
   if (塗り絵の鍵) return;
   if (!Core.nurieUnlocked(records, SHAPES.length, false)) return;
   塗り絵の鍵 = true;
-  try { localStorage.setItem(NURIE_KEY, "1"); } catch (_) { /* 容量超過などは諦める */ }
+  try { localStorage.setItem(NURIE_KEY, "1"); } catch (_) { /* 同上 */ }
   if (知らせる) toast("皆伝。塗り絵が開きました");
 }
-鍵を見直す(false);
 
 /* 型を画面中央に配置し、升目(埋まり判定のマス)を敷き直す */
 function buildShapeGeometry() {
@@ -2118,6 +2224,7 @@ function drawShapeOutline() {
 const swatches = {
   gold: "sw-gold", silver: "sw-silver", copper: "sw-copper",
   ao: "sw-ao", yaki: "sw-yaki",
+  dou: "sw-dou", rokusho: "sw-rokusho", beniyaki: "sw-beniyaki",
 };
 /* 指がやることの並び。ここから1つだけが選ばれている */
 const 指の並び = [...Object.values(swatches), "btn-slide", "btn-erase"];
@@ -2129,7 +2236,10 @@ function 指を選ぶ(id) {
 }
 
 /* 箔の名前。額と品書きで同じものを使う */
-const 箔の名 = { gold: "金箔", silver: "銀箔", copper: "赤金", ao: "青金", yaki: "焼箔" };
+const 箔の名 = {
+  gold: "金箔", silver: "銀箔", copper: "赤金", ao: "青金", yaki: "焼箔",
+  dou: "銅箔", rokusho: "緑青箔", beniyaki: "紅焼箔",
+};
 
 const 額 = document.getElementById("palette");
 const 額の箔 = document.getElementById("palette-foil");
@@ -2137,6 +2247,7 @@ const 額の名 = document.getElementById("palette-name");
 const 額のボタン = document.getElementById("palette-open");
 
 function 品書きを開く(開く) {
+  if (開く) hideHint();      /* 8行になり、案内文と重なるようになった */
   額.classList.toggle("open", 開く);
   額のボタン.setAttribute("aria-expanded", 開く ? "true" : "false");
 }
@@ -2149,6 +2260,10 @@ function 品書きを開く(開く) {
 for (const [key, id] of Object.entries(swatches)) {
   document.getElementById(id).addEventListener("click", (e) => {
     e.stopPropagation();
+    if (!箔が開いている(key)) {
+      toast("名人 " + Core.foilNeed(key) + " 型で開きます (いま " + Core.meijinCount(records) + " 型)");
+      return;
+    }
     currentPalette = key;
     手 = "蒔く";
     指を選ぶ(id);
@@ -2158,6 +2273,24 @@ for (const [key, id] of Object.entries(swatches)) {
     品書きを開く(false);      /* 選んだら閉じる */
   });
 }
+
+/* 閉じている箔に、閉じている印と「あと何型で開くか」を出す。
+   隠してしまうと、何を目指せばよいのか分からない */
+function 品書きの鍵を描く() {
+  const 名人 = Core.meijinCount(records);
+  for (const f of Core.FOIL_UNLOCK) {
+    const el = document.getElementById(swatches[f.key]);
+    if (!el) continue;
+    const 開 = 箔が開いている(f.key);
+    el.classList.toggle("locked", !開);
+    const 札 = el.querySelector(".need");
+    if (札) 札.textContent = 開 ? "" : "名人" + f.need + "型";
+  }
+}
+/* 読み込み時に一度。記録が先に揃っている(別の端末から移した等)ときも、
+   ここで印を書き留めて、以後は記録によらず開いたままにする。
+   品書きの要素が出来てからでないと呼べないので、ここに置く */
+鍵を見直す(false);
 
 /* 品書きを開いたまま別の所を触ったら閉じる(画面を触ったときは蒔きたい)。
    棚の中を触ったときは閉じない。閉じてしまうと、品書きの箔を押す前に
@@ -2483,7 +2616,7 @@ window.__app = {
   flakes, settled, sliding, sparkles, odai, SHAPES,
   Core,
   slidePush, PUSH_RADIUS, SETTLE_MIN, SETTLE_SPAN,
-  YAKI_PAIRS,
+  YAKI_PAIRS, BENI_PAIRS, 勾配の組, 勾配の範囲,
   bladePush, distToPath, BLADE_R,
   titleFlakes,
   isTitleUp() { return titleUp; },

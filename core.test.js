@@ -221,6 +221,46 @@ test("段位: 名人を取れた型の数で上がり、全型で皆伝", () => 
   assert.equal(C.grade(r, n).name, "皆伝");
 });
 
+test("箔の鍵: 名人の数で開き、はじめの5色は取り上げない", () => {
+  const 元からの箔 = ["gold", "silver", "copper", "ao", "yaki"];
+  let r = C.emptyRecords();
+  for (const k of 元からの箔) {
+    assert.equal(C.foilUnlocked(k, r, false), true, `${k} がはじめから使えない`);
+  }
+  for (const f of C.FOIL_UNLOCK) {
+    assert.equal(C.foilUnlocked(f.key, r, false), false, `${f.name} がはじめから開いている`);
+  }
+  /* 名人を1型ずつ積むと、決めた数でひとつずつ開く */
+  for (let i = 0; i < shapes.length; i++) {
+    r = C.applyResult(r, shapes[i].name, { rank: "名人", fill: 0.9, spill: 0.1 });
+    const 名人 = i + 1;
+    for (const f of C.FOIL_UNLOCK) {
+      assert.equal(C.foilUnlocked(f.key, r, false), 名人 >= f.need,
+        `名人 ${名人} 型のとき ${f.name} の開き方が違う (要 ${f.need})`);
+    }
+  }
+});
+
+test("箔の鍵: 段位の変わり目に合わせてある", () => {
+  /* 12型なら 初伝(1) / 中伝(5) / 奥伝(9)。段位が上がった回に開く */
+  const n = shapes.length;
+  const 段位 = (名人) => {
+    let r = C.emptyRecords();
+    for (let i = 0; i < 名人; i++) r = C.applyResult(r, shapes[i].name, { rank: "名人", fill: 0.9, spill: 0.1 });
+    return C.grade(r, n).name;
+  };
+  for (const f of C.FOIL_UNLOCK) {
+    assert.notEqual(段位(f.need), 段位(f.need - 1),
+      `${f.name} が開く ${f.need} 型は、段位の変わり目になっていない`);
+  }
+});
+
+test("箔の鍵: 一度開いたら、記録を消しても閉じない", () => {
+  for (const f of C.FOIL_UNLOCK) {
+    assert.equal(C.foilUnlocked(f.key, C.emptyRecords(), true), true, `${f.name} が閉じた`);
+  }
+});
+
 test("塗り絵の鍵: 全部の型で名人になって開く", () => {
   let r = C.emptyRecords();
   const n = shapes.length;
