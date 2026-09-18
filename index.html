@@ -126,9 +126,9 @@
   #palette.open #palette-list {
     margin-top: 6px;
     padding: 6px 0 6px 16px;
-    /* 1行 46px x 8 + 余白。狭い端末では画面なりに詰め、あふれたら
-       中で送る(下の操作帯に潜り込ませない) */
-    max-height: min(520px, 68vh);
+    /* 1行 49px x 10 ぶん。実測で 490px に収まる(iPhone 16 Plus)。
+       それを超えたら中で送る(下の操作帯に潜り込ませない) */
+    max-height: 520px;
     opacity: 1;
     overflow-y: auto;
     pointer-events: auto;
@@ -219,9 +219,7 @@
   #bar-frame .nami.r { right: 0; transform: scaleX(-1); }
   .swatch, .tool {
     display: flex; flex-direction: column; align-items: center; gap: 6px;
-    /* 指で押せる幅を切らさない。狭い端末では画面なりに詰める
-       (320px 幅だと 62px x5 では横に溢れる) */
-    min-width: min(62px, 16vw);
+    min-width: 62px;             /* 指で押せる幅を切らさない */
     padding: 3px 4px;
     background: none; border: 0;
     font-family: inherit; font-size: 12px; letter-spacing: 0.08em;
