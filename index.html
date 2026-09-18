@@ -2289,17 +2289,16 @@ for (const [key, id] of Object.entries(swatches)) {
   });
 }
 
-/* 閉じている箔に、閉じている印と「あと何型で開くか」を出す。
-   隠してしまうと、何を目指せばよいのか分からない */
+/* 閉じている箔に「未開放」と添える。
+   何型で開くかは、押したときに出す(並びに数字を並べると煩い) */
 function 品書きの鍵を描く() {
-  const 名人 = Core.meijinCount(records);
   for (const f of Core.FOIL_UNLOCK) {
     const el = document.getElementById(swatches[f.key]);
     if (!el) continue;
     const 開 = 箔が開いている(f.key);
     el.classList.toggle("locked", !開);
     const 札 = el.querySelector(".need");
-    if (札) 札.textContent = 開 ? "" : "名人" + f.need + "型";
+    if (札) 札.textContent = 開 ? "" : "未開放";
   }
 }
 /* 読み込み時に一度。記録が先に揃っている(別の端末から移した等)ときも、

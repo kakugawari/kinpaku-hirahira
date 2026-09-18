@@ -1641,15 +1641,22 @@ async function run() {
     ok(元からの.every((id) => はじめ[id] && !はじめ[id].閉),
       `はじめの5色は取り上げていない (${元からの.filter((id) => はじめ[id] && はじめ[id].閉).join('・') || '5色とも使える'})`);
     ok(鍵の表.every((f) => はじめ['sw-' + f.key] && はじめ['sw-' + f.key].閉 &&
-                          はじめ['sw-' + f.key].札.includes(String(f.need))),
-      `閉じている箔も並びに出て、あと何型か見えている (${鍵の表.map((f) => f.name + はじめ['sw-' + f.key].札).join(' / ')})`);
+                          はじめ['sw-' + f.key].札 === '未開放'),
+      `閉じている箔も並びに出て、未開放と分かる (${鍵の表.map((f) => f.name + '「' + はじめ['sw-' + f.key].札 + '」').join(' / ')})`);
 
-    /* 閉じている箔は押しても選べない */
+    /* 閉じている箔は押しても選べない。
+       ただし押したときは、何型で開くかを知らせる(並びに数字は並べない) */
     const 最後 = 鍵の表[鍵の表.length - 1];
     await p箔.click('#sw-' + 最後.key);
     await p箔.waitForTimeout(300);
-    const 押した後 = await p箔.evaluate(() => document.getElementById('palette-name').textContent);
-    ok(押した後 === '金箔', `閉じている箔は押しても選べない (額は ${押した後} のまま)`);
+    const 押した後 = await p箔.evaluate(() => ({
+      額: document.getElementById('palette-name').textContent,
+      知らせ: document.getElementById('toast').textContent,
+      出ている: document.getElementById('toast').classList.contains('show'),
+    }));
+    ok(押した後.額 === '金箔', `閉じている箔は押しても選べない (額は ${押した後.額} のまま)`);
+    ok(押した後.出ている && 押した後.知らせ.includes(String(最後.need)),
+      `押すと、何型で開くかを知らせる (${押した後.知らせ})`);
 
     /* 決めた数ちょうどで開く。手前では開かない */
     for (const f of 鍵の表) {
