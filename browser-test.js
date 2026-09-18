@@ -773,8 +773,8 @@ async function run() {
       ok(中身.道具.length === 5 && 中身.道具.every((k) => k.名前.trim() && k.絵),
         `${label}: 帯の5つに絵と名前が揃う (${中身.道具.map((k) => k.名前).join('・')})`);
       /* 6種は元から使える。あとの3種は名人を取ると開く(閉じていても並びには出す) */
-      ok(中身.箔.length === 9 && 中身.箔.every((k) => k.名前.trim() && k.絵),
-        `${label}: 品書きに9種そろう (${中身.箔.map((k) => k.名前.replace(/名人\d+型/, '')).join('・')})`);
+      ok(中身.箔.length === 10 && 中身.箔.every((k) => k.名前.trim() && k.絵),
+        `${label}: 品書きに10種そろう (${中身.箔.map((k) => k.名前.replace(/名人\d+型/, '')).join('・')})`);
       ok(中身.棚の位置.左 < V.width / 3 && 中身.棚の位置.上 < V.height / 4,
         `${label}: 箔の棚が左上にある (左${中身.棚の位置.左} / 上${中身.棚の位置.上})`);
       ok(中身.選ばれている.length === 1 && 中身.選ばれている[0] === 'sw-gold',
@@ -1723,28 +1723,68 @@ async function run() {
     ok(閉じた見え.every((v) => v.最大 >= 140),
       `封の菱が光っている (いちばん明るい所 ${閉じた見え.map((v) => v.名 + v.最大).join(' ')})`);
 
-    /* 開いた箔は選べて、その色が撒かれる(紅焼箔は勾配を持つ) */
-    await 箔を選ぶ(p箔, '#sw-' + 最後.key);
-    await p箔.waitForTimeout(200);
-    await p箔.mouse.move(CX, Math.round(V.height * 0.35));
-    /* 250ms では 65枚しか積もらず、数の下限に届かなかった */
-    await p箔.mouse.down(); await p箔.waitForTimeout(900); await p箔.mouse.up();
-    await p箔.waitForTimeout(3600);
-    const 撒けた = await p箔.evaluate(() => {
-      const A = window.__app;
-      const 範囲 = A.勾配の範囲.beniyaki;
-      const gi = A.settled.map((r) => r.gi).filter((g) => g >= 0);
-      return {
-        額: document.getElementById('palette-name').textContent,
-        積もり: A.settled.length,
-        勾配を持つ: gi.length,
-        範囲の外: gi.filter((g) => g < 範囲[0] || g >= 範囲[1]).length,
-      };
-    });
-    ok(撒けた.額 === 最後.name && 撒けた.積もり > 100,
-      `開いた箔は選べて撒ける (${撒けた.額} / ${撒けた.積もり}枚)`);
-    ok(撒けた.勾配を持つ > 100 && 撒けた.範囲の外 === 0,
-      `紅焼箔は自分の組だけを使う (勾配つき ${撒けた.勾配を持つ}枚 / 範囲の外 ${撒けた.範囲の外}枚)`);
+    /* 開いた箔は選べて、その色が撒かれる。
+       勾配を持つ箔は、自分に割り当てられた組の範囲だけを使う */
+    const 撒いてみる = async (key) => {
+      await p箔.evaluate(() => document.getElementById('btn-clear').click());
+      await p箔.waitForTimeout(1300);
+      await 箔を選ぶ(p箔, '#sw-' + key);
+      await p箔.waitForTimeout(200);
+      await p箔.mouse.move(CX, Math.round(V.height * 0.35));
+      /* 250ms では 65枚しか積もらず、数の下限に届かなかった */
+      await p箔.mouse.down(); await p箔.waitForTimeout(900); await p箔.mouse.up();
+      await p箔.waitForTimeout(3600);
+      return p箔.evaluate((k) => {
+        const A = window.__app;
+        const 範囲 = A.勾配の範囲[k];
+        const gi = A.settled.map((r) => r.gi).filter((g) => g >= 0);
+        return {
+          額: document.getElementById('palette-name').textContent,
+          積もり: A.settled.length,
+          勾配を持つ: gi.length,
+          使った組: new Set(gi).size,
+          組の数: 範囲 ? 範囲[1] - 範囲[0] : 0,
+          範囲の外: 範囲 ? gi.filter((g) => g < 範囲[0] || g >= 範囲[1]).length : 0,
+        };
+      }, key);
+    };
+
+    const 紅 = await 撒いてみる('beniyaki');
+    ok(紅.額 === '紅焼箔' && 紅.積もり > 100,
+      `開いた箔は選べて撒ける (${紅.額} / ${紅.積もり}枚)`);
+    ok(紅.勾配を持つ > 100 && 紅.範囲の外 === 0,
+      `紅焼箔は自分の組だけを使う (勾配つき ${紅.勾配を持つ}枚 / 範囲の外 ${紅.範囲の外}枚)`);
+
+    /* 玉虫箔は「色が混ざった焼箔」。ほかの焼箔は自分の組だけを使うが、
+       これだけは全部の組を使う。一枚の中で離れた色を混ぜると中間で色が
+       抜けるので、混ぜるのは箔ごと ―― 組そのものは隣り合う二色のまま */
+    const 玉 = await 撒いてみる('tamamushi');
+    ok(玉.額 === '玉虫箔' && 玉.使った組 === 玉.組の数,
+      `玉虫箔は全部の組を使う (${玉.使った組}/${玉.組の数}組 / ${玉.積もり}枚)`);
+
+    /* 玉虫箔は、いちばんの褒美なのでいちばん光る。
+       「光っているか」ではなく「ふつうの箔より何倍光るか」で見る。
+       光の量は「濃さ x 面積」で数える(玉虫箔は濃さと数で稼いでいて、
+       大きさでは稼いでいない。大きさで稼ぐと遅い端末が重くなる)。
+       同じ枚数を積もらせてから、3秒ぶん積む
+       (実測2回: 金箔 131/138・紅焼箔 131/141・玉虫箔 540/490 = 3.5〜4.1倍) */
+    const 光の量 = () => p箔.evaluate(() => new Promise((res) => {
+      let 和 = 0, i = 0;
+      const t = setInterval(() => {
+        for (const s of window.__app.sparkles) {
+          const 大 = s.scale || 1;
+          和 += (s.kira || 1) * 大 * 大;
+        }
+        if (++i >= 60) { clearInterval(t); res(Math.round(和)); }
+      }, 50);
+    }));
+    const 玉の光 = await 光の量();
+    const 金箔で = await 撒いてみる('gold');
+    const 金の光 = await 光の量();
+    ok(Math.abs(玉.積もり - 金箔で.積もり) < 玉.積もり * 0.4,
+      `同じくらいの枚数で比べている (玉虫 ${玉.積もり}枚 / 金箔 ${金箔で.積もり}枚)`);
+    ok(玉の光 > 金の光 * 2.5,
+      `玉虫箔がいちばん光る (玉虫 ${玉の光} / 金箔 ${金の光} = ${(玉の光 / Math.max(金の光, 1)).toFixed(1)}倍)`);
 
     /* 記録を消しても閉じない */
     await p箔.click('#btn-book');
@@ -1756,7 +1796,7 @@ async function run() {
     await p箔.waitForTimeout(200);
     const 箔で消した後 = await 品書き();
     ok(鍵の表.every((f) => !箔で消した後['sw-' + f.key].閉),
-      `記録を消しても箔は閉じない (${鍵の表.filter((f) => 箔で消した後['sw-' + f.key].閉).map((f) => f.name).join('・') || '3色とも開いたまま'})`);
+      `記録を消しても箔は閉じない (${鍵の表.filter((f) => 箔で消した後['sw-' + f.key].閉).map((f) => f.name).join('・') || '4色とも開いたまま'})`);
 
     await 開き直す(p箔);
     const 開き直し箔 = await 品書き();

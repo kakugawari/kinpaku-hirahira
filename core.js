@@ -502,9 +502,11 @@
      つなぎっぱなしだと「記録を消す」で閉じてしまう)
      ------------------------------------------------------------ */
   const FOIL_UNLOCK = [
-    { key: "dou",      name: "銅箔",   need: 1 },
-    { key: "rokusho",  name: "緑青箔", need: 5 },
-    { key: "beniyaki", name: "紅焼箔", need: 9 },
+    { key: "dou",       name: "銅箔",   need: 1 },
+    { key: "rokusho",   name: "緑青箔", need: 5 },
+    { key: "beniyaki",  name: "紅焼箔", need: 9 },
+    /* 玉虫箔は塗り絵と同じ皆伝で開く、いちばんの褒美 */
+    { key: "tamamushi", name: "玉虫箔", need: 12 },
   ];
 
   /* その箔が開くのに要る名人の数。表に無い箔ははじめから使える */

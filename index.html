@@ -128,7 +128,7 @@
     padding: 6px 0 6px 16px;
     /* 1行 46px x 8 + 余白。狭い端末では画面なりに詰め、あふれたら
        中で送る(下の操作帯に潜り込ませない) */
-    max-height: min(460px, 62vh);
+    max-height: min(520px, 68vh);
     opacity: 1;
     overflow-y: auto;
     pointer-events: auto;
@@ -358,6 +358,18 @@
       radial-gradient(ellipse 52% 34% at 21% 75%, rgba(48,10,20,0.55), rgba(0,0,0,0) 70%),
       conic-gradient(from 25deg at 34% 30%, #c03a46, #d0563f 14%, #d99a4e 30%, #b5794a 46%,
                      #9c4470 60%, #7a4a92 76%, #8e2a3c 90%, #c03a46);
+  }
+
+  /* 玉虫箔:色が混ざった焼箔。青から金茶まで一周する。
+     いちばんの褒美なので、輪の外にも光を回す */
+  [data-foil="tamamushi"] {
+    background:
+      radial-gradient(ellipse 58% 42% at 28% 20%, rgba(255,252,255,0.95), rgba(0,0,0,0) 60%),
+      radial-gradient(ellipse 44% 32% at 74% 70%, rgba(255,226,246,0.5), rgba(0,0,0,0) 66%),
+      radial-gradient(ellipse 40% 28% at 66% 24%, rgba(14,18,44,0.45), rgba(0,0,0,0) 70%),
+      conic-gradient(from 15deg at 38% 32%, #3f9aa0, #2f6f8e 10%, #3a5f9c 22%, #54468a 34%,
+                     #7a5ea8 46%, #8e5a86 58%, #c03a46 70%, #d0563f 80%, #d99a4e 90%, #3f9aa0);
+    box-shadow: inset 0 0 8px rgba(0,0,0,0.35), 0 0 14px 2px rgba(255,236,255,0.45);
   }
 
   /* 閉じている箔。何をすれば開くかは見せる(見えない褒美は目指せない)。
@@ -683,6 +695,7 @@
     <button class="swatch" id="sw-dou"      aria-label="銅箔"><span class="foil" data-foil="dou"></span><span class="cap">銅箔<span class="need"></span></span></button>
     <button class="swatch" id="sw-rokusho"  aria-label="緑青箔"><span class="foil" data-foil="rokusho"></span><span class="cap">緑青箔<span class="need"></span></span></button>
     <button class="swatch" id="sw-beniyaki" aria-label="紅焼箔"><span class="foil" data-foil="beniyaki"></span><span class="cap">紅焼箔<span class="need"></span></span></button>
+    <button class="swatch" id="sw-tamamushi" aria-label="玉虫箔"><span class="foil" data-foil="tamamushi"></span><span class="cap">玉虫箔<span class="need"></span></span></button>
   </div>
 </div>
 <div id="hint">触れて蒔き なでてずらす</div>
@@ -971,7 +984,15 @@ const PALETTES = {
   rokusho:  { base: ["#4e9a86", "#3d7f6e", "#6fb79f", "#2f6b5c", "#5aa894"], glint: "#c7f0e2" },
   /* 紅焼箔:焼箔の赤寄り。緋・紅・葡萄・金茶が一枚の中で移る */
   beniyaki: { base: ["#c03a46", "#d0563f", "#9c4470", "#b5794a", "#7a4a92", "#d99a4e"], glint: "#ffd9d0" },
+  /* 玉虫箔:焼き上がりの色が混ざったもの。一枚ごとに青・藍・紫・葡萄・
+     紅・金茶と出方が違う。勾配の組を全部使う(下の 勾配の範囲)。
+     いちばんの褒美なので、きらめきも強くする(kira) */
+  tamamushi: { base: ["#3f9aa0", "#3a5f9c", "#7a5ea8", "#8e5a86", "#c03a46", "#d99a4e"],
+               glint: "#fff2ff", kira: 2.4 },
 };
+
+/* きらめきの強さ。ふつうの箔は 1 */
+function 箔のきらめき(key) { return PALETTES[key].kira || 1; }
 
 /* 焼箔の、1枚の中での色の移り。実物も熱のかけ方で縁と中で色が変わる。
    箔1枚ごとに勾配を作ると重いので、箔の向きに合わせた「その場の座標」で
@@ -1009,6 +1030,10 @@ const 勾配の範囲 = {
   aoyaki:       [0, AOYAKI_PAIRS.length],
   murasakiyaki: [AOYAKI_PAIRS.length, AOYAKI_PAIRS.length + MURASAKI_PAIRS.length],
   beniyaki:     [AOYAKI_PAIRS.length + MURASAKI_PAIRS.length, 勾配の組.length],
+  /* 玉虫箔だけは全部の組を使う。一枚ごとに青から金茶まで出方が変わる。
+     一枚の中で離れた色を混ぜると中間で色が抜けるので、混ぜるのは
+     あくまで「箔ごと」―― 組そのものは隣り合う二色のまま */
+  tamamushi:    [0, 勾配の組.length],
 };
 /* 大きさごとに作り分ける。ひとつの勾配を使い回すと、小さい砂子は
    二色の「中間あたり」しか拾わず、色が浅く濁って見えた */
@@ -1100,6 +1125,7 @@ function makeFlake(x, y, big) {
     /* 焼箔だけ、1枚の中で色が移る。どの組で移るかは1枚ごとに引く */
     gi: 勾配の番号(currentPalette),
     glint: PALETTES[currentPalette].glint,
+    kira: 箔のきらめき(currentPalette),
     settleY: y + SETTLE_MIN + Math.random() * SETTLE_SPAN,   /* この高さまで落ちたら貼り付く */
   };
 }
@@ -1148,7 +1174,7 @@ function rebuildSediment() {
 function stampFlake(f) {
   const flipped = Math.random() < 0.08;   /* 約8%は裏返って貼り付く */
   const rec = {
-    x: f.x, y: f.y, size: f.size + 2, glint: f.glint,
+    x: f.x, y: f.y, size: f.size + 2, glint: f.glint, kira: f.kira || 1,
     /* ずらすときに姿を復元するための情報 */
     verts: f.verts, rot: f.rot, gi: f.gi,
     flipped, bright: 0.55 + Math.random() * 0.45,
@@ -1170,7 +1196,7 @@ function stampFlake(f) {
     sparkles.push({
       x: f.x, y: f.y, glint: f.glint,
       t: 0, dur: 0.25 + Math.random() * 0.15,
-      scale: 0.35 + f.size * 0.07,    /* 常時きらめきより控えめに */
+      scale: 0.35 + f.size * 0.07,
     });
   }
 }
@@ -1196,6 +1222,9 @@ function drawPoly(c, verts, yScale) {
    きらめき:貼り付いた箔が時々ちらっと光る(蒔絵の艶)
    ============================================================ */
 const sparkles = [];
+/* きらめきの上限。実測で、同時に 24 を超えたとたん CPU4倍遅の1コマが
+   16.9ms → 27.1ms へ跳ねた(加算合成の塗りが増えるため)。24 までは値段がつかない */
+const MAX_SPARKLES = 24;
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 let sparkleTimer = 0;
 
@@ -1207,14 +1236,56 @@ function updateSparkles(dt) {
     const n = Math.min(1 + (settled.length / 800 | 0), 3);
     for (let i = 0; i < n; i++) {
       const s = settled[(Math.random() * settled.length) | 0];
-      sparkles.push({ x: s.x, y: s.y, glint: s.glint, t: 0, dur: 0.5 + Math.random() * 0.4, scale: 1 });
+      /* よく光る箔は、濃さ・長さ・数の三つで稼ぐ。ただし上限 (MAX_SPARKLES)
+         までにしておく ―― 同時に出ている光が増えすぎると、加算合成の塗りが
+         効いてくる */
+      const k = s.kira || 1;
+      sparkles.push({ x: s.x, y: s.y, glint: s.glint, kira: k,
+                      t: 0, dur: (0.5 + Math.random() * 0.4) * (1 + (k - 1) * 0.18),
+                      scale: 1 });
+      /* よく光る箔は、すぐ隣にもうひとつ散らす */
+      if (k > 1) {
+        const r = s.size * 1.8;
+        sparkles.push({ x: s.x + (Math.random() - 0.5) * r, y: s.y + (Math.random() - 0.5) * r,
+                        glint: s.glint, kira: k, t: 0, dur: 0.3 + Math.random() * 0.3,
+                        scale: 0.65, 細: true });
+      }
     }
   }
   for (let i = sparkles.length - 1; i >= 0; i--) {
     sparkles[i].t += dt;
     if (sparkles[i].t > sparkles[i].dur) sparkles.splice(i, 1);
   }
+  /* 上限。どんな箔でも、ここから先は増やさない(遅い端末の保険) */
+  if (sparkles.length > MAX_SPARKLES) sparkles.splice(0, sparkles.length - MAX_SPARKLES);
 }
+
+/* きらめきの光の絵。毎フレーム createRadialGradient を作ると、光が増えたときに
+   そこだけで重くなる(玉虫箔で CPU4倍遅の1コマが 19.1 → 50.2ms に伸びた)。
+   色ごとに一度だけ焼いて、あとは貼るだけにする */
+const きらめきの絵 = new Map();
+function きらめきの素(glint) {
+  let 絵 = きらめきの絵.get(glint);
+  if (!絵) {
+    const R = 48;
+    絵 = document.createElement("canvas");
+    絵.width = 絵.height = R * 2;
+    const g = 絵.getContext("2d");
+    const 勾配 = g.createRadialGradient(R, R, 0, R, R, R);
+    /* 芯を締める。ふちまでだらだら伸ばすと、ほとんど透明な所まで
+       加算合成で塗ることになり、遅い端末でそこだけ重くなる */
+    勾配.addColorStop(0, glint);
+    勾配.addColorStop(0.28, glint);
+    勾配.addColorStop(1, "rgba(255,240,190,0)");
+    g.fillStyle = 勾配;
+    g.fillRect(0, 0, R * 2, R * 2);
+    きらめきの絵.set(glint, 絵);
+  }
+  return 絵;
+}
+
+const 光条の段数 = 4;
+const 光条の道 = new Array(光条の段数).fill(null);
 
 function drawSparkles() {
   ctx.save();
@@ -1223,21 +1294,28 @@ function drawSparkles() {
     const p = s.t / s.dur;
     const a = Math.sin(p * Math.PI);          /* ふわっと明滅 */
     const r = (3 + a * 5) * (s.scale || 1);
-    /* 中心の光 */
-    const g = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, r);
-    g.addColorStop(0, s.glint);
-    g.addColorStop(1, "rgba(255,240,190,0)");
-    ctx.globalAlpha = a * 0.8;
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, Math.PI * 2); ctx.fill();
-    /* 十字の光条 */
-    ctx.globalAlpha = a * 0.6;
-    ctx.strokeStyle = s.glint;
-    ctx.lineWidth = 0.8;
-    ctx.beginPath();
-    ctx.moveTo(s.x - r * 1.6, s.y); ctx.lineTo(s.x + r * 1.6, s.y);
-    ctx.moveTo(s.x, s.y - r * 1.6); ctx.lineTo(s.x, s.y + r * 1.6);
-    ctx.stroke();
+    /* 中心の光。よく光る箔は「濃さ」で稼ぐ ―― 塗る面積が増えないので、
+       遅い端末でも値段がつかない */
+    ctx.globalAlpha = Math.min(1, a * 0.8 * (s.kira || 1));
+    ctx.drawImage(きらめきの素(s.glint), s.x - r, s.y - r, r * 2, r * 2);
+    /* 十字の光条は、1つずつ stroke() すると呼ぶ回数がそのまま増える。
+       明るさを段に丸めて、段ごとに1本の道としてまとめて引く
+       (型の輪郭の金砂と同じ手) */
+    if (!s.細) {
+      const 段 = Math.min(光条の段数 - 1, (a * 光条の段数) | 0);
+      const 道 = 光条の道[段] || (光条の道[段] = new Path2D());
+      道.moveTo(s.x - r * 1.6, s.y); 道.lineTo(s.x + r * 1.6, s.y);
+      道.moveTo(s.x, s.y - r * 1.6); 道.lineTo(s.x, s.y + r * 1.6);
+    }
+  }
+  ctx.lineWidth = 0.8;
+  ctx.strokeStyle = "#fff3d8";
+  for (let k = 0; k < 光条の段数; k++) {
+    const 道 = 光条の道[k];
+    if (!道) continue;
+    ctx.globalAlpha = ((k + 0.5) / 光条の段数) * 0.6;
+    ctx.stroke(道);
+    光条の道[k] = null;
   }
   ctx.restore();
 }
@@ -2263,6 +2341,7 @@ const swatches = {
   gold: "sw-gold", silver: "sw-silver", yokin: "sw-yokin", ao: "sw-ao",
   aoyaki: "sw-aoyaki", murasakiyaki: "sw-murasakiyaki",
   dou: "sw-dou", rokusho: "sw-rokusho", beniyaki: "sw-beniyaki",
+  tamamushi: "sw-tamamushi",
 };
 /* 指がやることの並び。ここから1つだけが選ばれている */
 const 指の並び = [...Object.values(swatches), "btn-slide", "btn-erase"];
@@ -2277,7 +2356,7 @@ function 指を選ぶ(id) {
 const 箔の名 = {
   gold: "金箔", silver: "銀箔", yokin: "洋金", ao: "青金",
   aoyaki: "青焼箔", murasakiyaki: "紫焼箔",
-  dou: "銅箔", rokusho: "緑青箔", beniyaki: "紅焼箔",
+  dou: "銅箔", rokusho: "緑青箔", beniyaki: "紅焼箔", tamamushi: "玉虫箔",
 };
 
 const 額 = document.getElementById("palette");
